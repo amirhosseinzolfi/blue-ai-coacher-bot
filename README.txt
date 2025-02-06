@@ -1,4 +1,3 @@
-
 # Blue AI Coacher Bot
 
 Blue AI Coacher Bot is a Telegram chatbot that acts as your friendly, expert business coach. Powered by OpenAI’s language models and LangChain, the bot provides personalized coaching in Persian, manages conversation history, and offers configurable settings for business information and AI tone. It also comes with interactive options to generate daily reports, analyze member activities, and list daily tasks.
