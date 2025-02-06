@@ -1,7 +1,5 @@
 import os
 import datetime
-import uuid
-import json
 import logging
 import threading
 from sqlalchemy import create_engine, text
@@ -23,14 +21,12 @@ if run_api is not None:
         logging.info("Starting G4F Interference API server on http://localhost:15203/v1 ...")
         # Bind the server to 0.0.0.0:15203
         run_api(bind="0.0.0.0:15203")
-    # Run the API in a daemon thread so it does not block the main thread.
     api_thread = threading.Thread(target=start_interference_api, daemon=True)
     api_thread.start()
 
 # --- Set up API keys ---
-TELEGRAM_BOT_TOKEN = "7796762427:AAGDTTAt6qn0-bTpnkejqsy8afQJLZhWkuk"  # Replace with your actual token
-GOOGLE_API_KEY = "AIzaSyBAHu5yR3ooMkyVyBmdFxw-8lWyaExLjjE"           # Replace with your actual API key
-
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Replace with your actual token
+GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY"          # Replace with your actual API key
 os.environ["OPENAI_API_KEY"] = GOOGLE_API_KEY
 
 # Global dictionaries for per-chat settings
@@ -38,7 +34,7 @@ chat_session_map = {}
 business_info_map = {}  # Stores business info per chat_id
 ai_tone_map = {}        # Stores AI tone per chat_id (default: "دوستانه")
 
-OPENAI_API_KEY = "123"  # Replace with your actual OpenAI API key.
+OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"  # Replace with your actual OpenAI API key.
 # IMPORTANT: Set the base_url to the locally running API server.
 OPENAI_BASE_URL = "http://localhost:15203/v1"
 OPENAI_MODEL_NAME = "gpt-4o-mini"
@@ -50,10 +46,6 @@ engine = create_engine("sqlite:///telegram_chat_history.db")
 logging.info("SQLite engine created using database 'telegram_chat_history.db'.")
 
 def initialize_history_table():
-    """
-    Create the chat_message_histories table if it does not exist.
-    This table is used exclusively to persist chat sessions.
-    """
     with engine.connect() as connection:
         connection.execute(text("""
             CREATE TABLE IF NOT EXISTS chat_message_histories (
@@ -70,10 +62,6 @@ def initialize_history_table():
 initialize_history_table()
 
 def get_message_history(session_id: str):
-    """
-    For the given session (identified by session_id), return a new SQLChatMessageHistory.
-    This object is used by the LangChain chain both to load past messages and to record new ones.
-    """
     actual_session_id = chat_session_map.get(session_id, session_id)
     logging.info(f"Retrieving message history for session: {actual_session_id}.")
     from langchain_community.chat_message_histories import SQLChatMessageHistory
@@ -154,8 +142,11 @@ def setup_bot_commands():
     ]
     try:
         logging.info("Setting up bot commands for private and group chats...")
-        bot.delete_my_commands(scope=BotCommandScopeDefault())
-        bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
+        try:
+            bot.delete_my_commands(scope=BotCommandScopeDefault())
+            bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
+        except Exception as e:
+            logging.error(f"Error deleting existing bot commands: {e}")
         bot.set_my_commands(commands, scope=BotCommandScopeDefault())
         bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
         logging.info("Bot commands have been set up successfully.")
