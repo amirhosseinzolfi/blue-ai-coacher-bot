@@ -25,16 +25,14 @@ if run_api is not None:
     api_thread.start()
 
 # --- Set up API keys ---
-TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Replace with your actual token
-GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY"          # Replace with your actual API key
-os.environ["OPENAI_API_KEY"] = GOOGLE_API_KEY
-
+TELEGRAM_BOT_TOKEN = "7796762427:AAGDTTAt6qn0-bTpnkejqsy8afQJLZhWkuk"  # Replace with your actual token
+GOOGLE_API_KEY = "AIzaSyBAHu5yR3ooMkyVyBmdFxw-8lWyaExLjjE"           # Replace with your actual API key
+OPENAI_API_KEY = "123" 
 # Global dictionaries for per-chat settings
 chat_session_map = {}
 business_info_map = {}  # Stores business info per chat_id
 ai_tone_map = {}        # Stores AI tone per chat_id (default: "دوستانه")
 
-OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"  # Replace with your actual OpenAI API key.
 # IMPORTANT: Set the base_url to the locally running API server.
 OPENAI_BASE_URL = "http://localhost:15203/v1"
 OPENAI_MODEL_NAME = "gpt-4o-mini"
