@@ -19,7 +19,7 @@ except ImportError:
 if run_api is not None:
     def start_interference_api():
         logging.info("Starting G4F Interference API server on http://localhost:15203/v1 ...")
-        # Bind the server to 0.0.0.0:15203
+        # Bind the server to 0.0.0.0:15203 (this is for local fallback)
         run_api(bind="0.0.0.0:15203")
     api_thread = threading.Thread(target=start_interference_api, daemon=True)
     api_thread.start()
@@ -27,14 +27,17 @@ if run_api is not None:
 # --- Set up API keys ---
 TELEGRAM_BOT_TOKEN = "7796762427:AAGDTTAt6qn0-bTpnkejqsy8afQJLZhWkuk"  # Replace with your actual token
 GOOGLE_API_KEY = "AIzaSyBAHu5yR3ooMkyVyBmdFxw-8lWyaExLjjE"           # Replace with your actual API key
-OPENAI_API_KEY = "123" 
+OPENAI_API_KEY = "123"  # Replace with your actual OpenAI API key
+
+os.environ["OPENAI_API_KEY"] = GOOGLE_API_KEY
+
 # Global dictionaries for per-chat settings
 chat_session_map = {}
 business_info_map = {}  # Stores business info per chat_id
 ai_tone_map = {}        # Stores AI tone per chat_id (default: "دوستانه")
 
-# IMPORTANT: Set the base_url to the locally running API server.
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:15203/v1")
+# IMPORTANT: Set the base_url to your deployed Vercel project URL.
+OPENAI_BASE_URL = "https://blue-ai-coacher-bot-jkgs.vercel.app/v1"
 OPENAI_MODEL_NAME = "gpt-4o-mini"
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
