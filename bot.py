@@ -34,7 +34,7 @@ business_info_map = {}  # Stores business info per chat_id
 ai_tone_map = {}        # Stores AI tone per chat_id (default: "دوستانه")
 
 # IMPORTANT: Set the base_url to the locally running API server.
-OPENAI_BASE_URL = "http://localhost:15203/v1"
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "http://localhost:15203/v1")
 OPENAI_MODEL_NAME = "gpt-4o-mini"
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
