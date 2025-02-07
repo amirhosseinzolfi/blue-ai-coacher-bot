@@ -381,7 +381,7 @@ def set_ai_tone(call):
 def process_option_prompt(chat_id, prompt_text):
     logging.info(f"Processing option prompt for chat {chat_id}: {prompt_text}")
     bot.send_chat_action(chat_id, 'typing')
-    placeholder_message = bot.send_message(chat_id, "🤔 *در حال پردازش...*", parse_mode="Markdown")
+    placeholder_message = bot.send_message(chat_id, "🤔 *در حال فکر کردن...*", parse_mode="Markdown")
     try:
         ai_response = chain_with_history.invoke(
             {
