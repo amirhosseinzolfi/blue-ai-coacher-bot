@@ -19,7 +19,6 @@ except ImportError:
 if run_api is not None:
     def start_interference_api():
         logging.info("Starting G4F Interference API server on http://localhost:15203/v1 ...")
-        # Bind the server to 0.0.0.0:15203 (this is for local fallback)
         run_api(bind="0.0.0.0:15203")
     api_thread = threading.Thread(target=start_interference_api, daemon=True)
     api_thread.start()
@@ -27,17 +26,14 @@ if run_api is not None:
 # --- Set up API keys ---
 TELEGRAM_BOT_TOKEN = "7796762427:AAGDTTAt6qn0-bTpnkejqsy8afQJLZhWkuk"  # Replace with your actual token
 GOOGLE_API_KEY = "AIzaSyBAHu5yR3ooMkyVyBmdFxw-8lWyaExLjjE"           # Replace with your actual API key
-OPENAI_API_KEY = "123"  # Replace with your actual OpenAI API key
-
-os.environ["OPENAI_API_KEY"] = GOOGLE_API_KEY
-
+OPENAI_API_KEY = "123"
 # Global dictionaries for per-chat settings
 chat_session_map = {}
 business_info_map = {}  # Stores business info per chat_id
 ai_tone_map = {}        # Stores AI tone per chat_id (default: "دوستانه")
 
-# IMPORTANT: Set the base_url to your deployed Vercel project URL.
-OPENAI_BASE_URL = "https://blue-ai-coacher-bot-jkgs.vercel.app/v1"
+# IMPORTANT: Set the base_url to the locally running API server.
+OPENAI_BASE_URL = "http://localhost:15203/v1"
 OPENAI_MODEL_NAME = "gpt-4o-mini"
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
@@ -94,12 +90,22 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 prompt = ChatPromptTemplate.from_messages([
     (
         "system",
-        "نام شما آبی است. شما یک مربی کسب‌وکار فوق‌العاده، دوستانه، متخصص و حرفه‌ای هستید. "
-        "شما تنها باید به فارسی پاسخ دهید و از هیچ زبان دیگری استفاده نکنید. "
-        "سبک سخن شما باید راحت و دوستانه باشد و نباید بیش از حد رسمی به نظر برسد. "
-        "به تمامی زمینه‌های گفتگوی ما (شامل تمام پیام‌های قبلی) توجه داشته باشید. "
-        "لحن هوش مصنوعی شما باید {ai_tone} باشد. \n"
-        "**اطلاعات و اسناد کسب‌وکار:**\n{business_info}"
+        "شما بلو (blue) هستید، یک مربی کسب و کار هوش مصنوعی حرفه‌ای، متخصص و بسیار مجرب که از قابلیت‌های پیشرفته مدل هوش مصنوعی GPT-4o استفاده می‌کنید. وظیفه اصلی شما مربیگری کسب و کارها و تیم‌هایشان برای دستیابی به عملکرد و رشد مطلوب است.\n\n"
+        "**مسئولیت‌های اصلی شما شامل:**\n\n"
+        "- **تحلیل عملکرد تیم:** تحلیل فعالیت‌های روزانه تیم و ارائه امتیازهای عملکرد فردی به اعضای تیم، ارائه بینش در مورد مشارکت‌هایشان و زمینه‌های قابل بهبود.\n"
+        "- **تحلیل وظایف:** بررسی دقیق وظایف محول شده به هر عضو تیم برای درک توزیع حجم کار و پیچیدگی وظایف.\n"
+        "- **سازماندهی و تخصیص وظایف:** سازماندهی و تخصیص استراتژیک وظایف به اعضای تیم، با در نظر گرفتن شخصیت‌های فردی، نقش‌هایشان در کسب و کار، و مجموعه‌های مهارتی برای به حداکثر رساندن کارایی و رضایت شغلی.\n"
+        "- **راهنمایی حرفه‌ای کسب و کار:** ارائه مشاوره تخصصی کسب و کار، با استفاده از اطلاعات، اسناد و داده‌های کارمندان ارائه شده کسب و کار برای اطمینان از مرتبط بودن و دقت. تمرکز بر تصمیم‌گیری‌های استراتژیک، بهینه‌سازی فرآیندها، و پرورش یک محیط کار سالم و سازنده.\n"
+        "- **مربیگری شخصی‌سازی شده و مدیریت وظایف:** ارائه استراتژی‌های مربیگری فردی و مدیریت وظایف برای هر عضو تیم. توصیه‌های خود را با نقش‌های خاص، شخصیت‌ها و داده‌های عملکرد آنها تنظیم کنید تا توسعه حرفه‌ای و مشارکت آنها در اهداف کسب و کار تسهیل شود.\n"
+        "- **استخراج داده از تصویر:** تحلیل و استخراج داده‌های مرتبط از تصاویر ارائه شده، با درک اینکه این داده‌ها ممکن است حاوی اطلاعات یا بینش‌های حیاتی کسب و کار باشند.\n\n"
+        "**دستورالعمل‌های مهم:**\n\n"
+        "- **شخصی‌سازی و صمیمیت:** در هر پاسخ، تلاش آگاهانه‌ای برای استفاده از نام کاربر برای ایجاد یک تعامل شخصی‌تر و دوستانه‌تر انجام دهید. این به ایجاد رابطه و اعتماد کمک می‌کند.\n"
+        "لطفاً در پاسخ‌هات از ساختار و نحو مارک‌داون استفاده نکن. برای ساختاردهی به متن‌ها از متن ساده، ایموجی‌ها و علائم استفاده کن"
+        "- **آگاهی از زمینه:** به تمام جنبه‌های مکالمه ما، از جمله تمام پیام‌ها و دستورالعمل‌های قبلی، توجه دقیق داشته باشید. زمینه را در طول تعاملات خود حفظ کنید تا پاسخ‌های منسجم و مرتبط ارائه دهید.\n"
+        "- **پاسخ‌های مبتنی بر داده:** به طور فعال اطلاعات کسب و کار، اسناد کسب و کار و اطلاعات کارمندان ارائه شده را هنگام تدوین پاسخ‌ها و توصیه‌های خود در نظر بگیرید و از آنها استفاده کنید. این اطمینان می‌دهد که راهنمایی شما بسیار مرتبط و به طور خاص برای زمینه کسب و کار طراحی شده است.\n"
+        "- **لحن و رفتار:** لحن و رفتار {ai_tone} را اتخاذ کنید. این لحن ثابت را در طول تمام تعاملات حفظ کنید.\n"
+        "- **دسترسی به داده:** شما به اطلاعات کسب و کار، اسناد کسب و کار و اطلاعات کارمندان زیر دسترسی دارید که برای مربیگری شما بسیار حیاتی است: . از این اطلاعات  برای بهبود کیفیت و ارتباط مربیگری خود و همچنین شخصی سازی بیشتر استفاده کنید.\n\n"
+        "**اطلاعات بیزینس و کارمندان** : {business_info}"
     ),
     MessagesPlaceholder(variable_name="history"),
     ("human", "{input}")
@@ -132,14 +138,16 @@ def is_admin(chat_id, user_id):
 def setup_bot_commands():
     commands = [
         BotCommand("start", "شروع ربات و نمایش اطلاعات چت"),
+        BotCommand("options", "انتخاب گزینه‌ها"),
+
+        #BotCommand("getchatid", "دریافت شناسه چت"),
+        #BotCommand("daily_report", "نمایش گزارش روزانه چت"),
+        BotCommand("new_chat", "ایجاد جلسه چت جدید"),
+        #BotCommand("show_sessions", "نمایش تمامی جلسات ذخیره شده گروه"),
         BotCommand("help", "نمایش پیام راهنما"),
-        BotCommand("getchatid", "دریافت شناسه چت"),
-        BotCommand("show_history", "نمایش خلاصه تاریخچه چت"),
-        BotCommand("refresh_history", "ریفرش و پاکسازی تاریخچه چت (شروع یک جلسه جدید)"),
-        BotCommand("show_sessions", "نمایش تمامی جلسات ذخیره شده گروه"),
-        BotCommand("about", "اطلاعات ربات"),
+
         BotCommand("settings", "تنظیمات ربات"),
-        BotCommand("options", "انتخاب گزینه‌ها")
+        BotCommand("about", "اطلاعات ربات")
     ]
     try:
         logging.info("Setting up bot commands for private and group chats...")
@@ -155,16 +163,28 @@ def setup_bot_commands():
         logging.error(f"Exception during bot command setup: {e}.")
 
 # --- Command Handlers ---
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = str(message.chat.id)
     chat_type = message.chat.type
     welcome_message = (
-        "سلام! من بلو هستم، یک مربی حرفه‌ای کسب‌وکار.\n"
-        f"Chat ID: {chat_id}\n"
-        f"Chat Type: {chat_type}\n"
-        "آماده‌ام تا به سوالات شما درباره کسب‌وکار و پروژه‌ها با دقت و دانش بالا پاسخ دهم!\n\n"
-        "برای مشاهده دستورات ربات از منوی زیر استفاده کنید."
+        "سلام! من بلو هستم، همراه هوشمند کسب‌وکارت 😉\n\n"
+        "خب ، اول اطلاعات کسب‌وکارت و تیمت رو توی /settings وارد کن تا بتونم مفید تر و به صورت کاملا شخصی سازی شده کمکت کنم.\n\n"
+        "من با استفاده از هوش مصنوعی قدرتمند gpt-4o و آنالیز اطلاعات کامل بیزینس و آنالیز تمامی چت های شما قراره به صورت یه مربی حرفه ای کاملا شخصی سازی شده و هوشمند کسب و کار، کنار شما باشم !\n\n"
+        "من چه کارایی میتونم انجام بدم؟\n\n"
+        "ببین من تقریبا هرکاری بخوای میتونم انجام بدم ، مثل :"
+        "* میتونم وظایف تیم رو بر اساس توانایی هاشون برنامه ریزی کنم\n"
+        "* در انتهای هر روز یک آنالیز کامل از تسک ها، فعالیت های اعضای تیم به همراه نمره شخصی برای هر فرد مینویسم /options\n"
+        "- میتونم گزارش فعالیت روزانه تیم رو نشونتون دهم /options\n"
+        "- میتونم با آنالیز پروژه هاتون تو مسیر اجرایی کردن پروژه ها راهنمایی و کمکتون کنم\n"
+        "- میتونم طبق اطلاعات و دیتا شخصی سازی شده بیزینس شما به سوالاتون جواب بدم\n"
+        "- میتونم با هر لحنی که شما در تنظیمات انتخاب کنید صحبنت کنم  /settings\n"
+        "- میتونم اطالاعات بیزینس شما و اعضای تیم رو آنالیز کنم و پاسخ های کاملا شخصی سازی شده بدم  /settings\n"
+        "- \n"
+        "و هر کار دیگه ای که فکرشو کنی فقط کافیه صدام کنی و ازم بپرسی! 😉\n\n\n"
+        " فقط کافیه صدام کنی 'بلو' و ازم بپرسی! 😉\n\n\n"
+        "(برای ارتباط با من، 'بلو' رو صدا کن، تگ کن یا از گزینه های بات استفاده کن.)"
     )
     bot.reply_to(message, welcome_message)
     logging.info(f"/start command processed for Chat ID: {chat_id}, Type: {chat_type}.")
@@ -182,14 +202,17 @@ def send_help(message):
     help_text = (
         "🤖 دستورات ربات:\n"
         "/start - شروع ربات و نمایش اطلاعات چت\n"
-        "/help - نمایش پیام راهنما\n"
-        "/getchatid - دریافت شناسه و نوع چت فعلی\n"
-        "/show_history - نمایش خلاصه تاریخچه چت\n"
-        "/refresh_history - ریفرش و پاکسازی تاریخچه چت (شروع یک جلسه جدید)\n"
-        "/show_sessions - نمایش تمامی جلسات ذخیره شده گروه\n"
-        "/about - اطلاعات ربات\n"
-        "/settings - تنظیمات ربات\n"
         "/options - انتخاب گزینه‌ها\n"
+        "/settings - تنظیمات ربات\n"
+        "/new_chat - ایجاد جلسه چت جدید\n"
+        "/help - نمایش پیام راهنما\n"
+        #"/getchatid - دریافت شناسه و نوع چت فعلی\n"
+        #"/daily_report - نمایش گزارش روزانه چت\n"
+
+        #"/show_sessions - نمایش تمامی جلسات ذخیره شده گروه\n"
+        "/about - اطلاعات ربات\n"
+
+
         "\nبرای ارسال پیام کافیست یک پیام متنی ارسال کنید. در گروه‌ها، من فقط زمانی پاسخ می‌دهم که منشن شوم یا از کلمه 'بلو' استفاده کنید."
     )
     bot.reply_to(message, help_text)
@@ -208,8 +231,8 @@ def about_bot(message):
 @bot.message_handler(commands=['settings'])
 def bot_settings(message):
     keyboard = telebot.types.InlineKeyboardMarkup()
-    btn_business_info = telebot.types.InlineKeyboardButton("اطلاعات بیزینس", callback_data="load_business_info")
-    btn_ai_tone = telebot.types.InlineKeyboardButton("لحن هوش مصنوعی", callback_data="ai_tone")
+    btn_business_info = telebot.types.InlineKeyboardButton("بار گزاری اطلاعات بیزینس", callback_data="load_business_info")
+    btn_ai_tone = telebot.types.InlineKeyboardButton("انتخاب لحن صحبت هوش مصنوعی", callback_data="ai_tone")
     keyboard.add(btn_business_info, btn_ai_tone)
     settings_text = "⚙️ تنظیمات ربات:\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
     bot.reply_to(message, settings_text, reply_markup=keyboard)
@@ -218,7 +241,7 @@ def bot_settings(message):
 @bot.message_handler(commands=['options'])
 def options_command(message):
     keyboard = telebot.types.InlineKeyboardMarkup()
-    btn_daily_report = telebot.types.InlineKeyboardButton("گزارش روزانه", callback_data="option_report_daily")
+    btn_daily_report = telebot.types.InlineKeyboardButton("آنالیز روزانه", callback_data="option_report_daily")
     btn_analyze_members = telebot.types.InlineKeyboardButton("آنالیز امروز اعضا", callback_data="option_analyze_today")
     btn_tasks_today = telebot.types.InlineKeyboardButton("تسک های امروز", callback_data="option_tasks_today")
     keyboard.add(btn_daily_report)
@@ -234,8 +257,8 @@ def on_new_chat_member(message):
             if new_member.id == bot.get_me().id:
                 chat_id = str(message.chat.id)
                 welcome_text = (
-                    "سلام دوستان! من بلو هستم، مربی کسب و کار شما. خوشحالم که به گروه اضافه شدم! "
-                    "از این به بعد، می‌توانید با من در مورد کسب‌وکار و پروژه‌ها صحبت کنید. "
+                    "سلام دوستان! من بلو هستم، خوشحالم که به گروه اضافه شدم! "
+                    "از این به بعد، می‌توانید با من در مورد تسکاتون ، ایده پردازی کسب‌وکار و پروژه‌ها یا هر سوال دیگه که تو ذهنتونه صحبت کنید. "
                     f"برای منشن کردن از @{bot.get_me().username} استفاده کنید."
                 )
                 bot.reply_to(message, welcome_text)
@@ -249,15 +272,17 @@ def on_new_chat_member(message):
         )
         logging.info(f"Bot started in private chat: {message.chat.id}.")
 
-@bot.message_handler(commands=['show_history'])
-def show_history(message):
+# --- Updated Command Handlers for Daily Report and New Chat Sessions ---
+
+@bot.message_handler(commands=['daily_report'])
+def daily_report(message):
     chat_id = str(message.chat.id)
     preset_input = "یه گزارش کامل از پیام های این چت تا لان بکو"
-    logging.info(f"/show_history triggered in chat {chat_id} with preset input: {preset_input}")
+    logging.info(f"/daily_report triggered in chat {chat_id} with preset input: {preset_input}")
 
     bot.send_chat_action(chat_id, 'typing')
     placeholder_message = bot.reply_to(message, "🤔 در حال فکر کردن...")
-    logging.info(f"Session ID for /show_history: {chat_id} -> {chat_session_map.get(chat_id, chat_id)}")
+    logging.info(f"Session ID for /daily_report: {chat_id} -> {chat_session_map.get(chat_id, chat_id)}")
 
     try:
         ai_response = chain_with_history.invoke(
@@ -268,22 +293,22 @@ def show_history(message):
             },
             config={"configurable": {"session_id": chat_id}}
         )
-        logging.info(f"AI response for /show_history in chat {chat_id}: {ai_response.content}")
+        logging.info(f"AI response for /daily_report in chat {chat_id}: {ai_response.content}")
         bot.edit_message_text(ai_response.content, chat_id=chat_id, message_id=placeholder_message.message_id)
     except Exception as e:
         error_message = (
             f"متاسفم، مشکلی در پردازش درخواست شما پیش آمد. لطفاً دوباره تلاش کنید.\n\nError: {str(e)}"
         )
         bot.edit_message_text(error_message, chat_id=chat_id, message_id=placeholder_message.message_id)
-        logging.error(f"Error in /show_history for chat {chat_id}: {e}")
+        logging.error(f"Error in /daily_report for chat {chat_id}: {e}")
 
-@bot.message_handler(commands=['refresh_history'])
-def refresh_history(message):
+@bot.message_handler(commands=['new_chat'])
+def new_chat(message):
     chat_id = str(message.chat.id)
     new_session_id = chat_id + "_" + str(int(datetime.datetime.now().timestamp()))
     chat_session_map[chat_id] = new_session_id
     bot.reply_to(message, f"💡 تاریخچه چت ریفرش شد. یک جلسه چت جدید آغاز شد (Session ID: {new_session_id}).")
-    logging.info(f"/refresh_history command processed for chat {chat_id}. New session ID: {new_session_id}")
+    logging.info(f"/new_chat command processed for chat {chat_id}. New session ID: {new_session_id}")
 
 @bot.message_handler(commands=['show_sessions'])
 def show_sessions(message):
@@ -328,7 +353,7 @@ def show_sessions(message):
 def handle_load_business_info(call):
     bot.answer_callback_query(call.id)
     logging.info(f"Loading business info for chat {call.message.chat.id}")
-    msg = bot.send_message(call.message.chat.id, "لطفاً اطلاعات کسب و کار و کارکنان خود را وارد کنید:")
+    msg = bot.send_message(call.message.chat.id, "لطفاً اطلاعات  کسب و کار و کارکنان خود را وارد کنید:")
     bot.register_next_step_handler(msg, process_business_info)
 
 def process_business_info(message):
@@ -347,14 +372,14 @@ def handle_ai_tone(call):
     btn_friendly = telebot.types.InlineKeyboardButton("دوستانه", callback_data="set_ai_tone_دوستانه")
     btn_professional = telebot.types.InlineKeyboardButton("حرفه ای", callback_data="set_ai_tone_حرفه ای")
     keyboard.add(btn_formal, btn_friendly, btn_professional)
-    bot.send_message(call.message.chat.id, "لطفاً لحن هوش مصنوعی را انتخاب کنید:", reply_markup=keyboard)
+    bot.send_message(call.message.chat.id, "لطفاً لحن صحبت هوش مصنوعی را انتخاب کنید:", reply_markup=keyboard)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("set_ai_tone_"))
 def set_ai_tone(call):
     tone = call.data.split("set_ai_tone_")[1]
     chat_id = str(call.message.chat.id)
     ai_tone_map[chat_id] = tone
-    bot.answer_callback_query(call.id, text=f"لحن هوش مصنوعی به '{tone}' تغییر یافت.")
+    bot.answer_callback_query(call.id, text=f"لحن صحبت هوش مصنوعی به '{tone}' تغییر یافت.")
     bot.send_message(chat_id, f"لحن هوش مصنوعی شما به '{tone}' تنظیم شد.")
     logging.info(f"AI tone set for chat {chat_id}: {tone}")
 
@@ -384,15 +409,23 @@ def process_option_prompt(chat_id, prompt_text):
 def handle_option_report_daily(call):
     bot.answer_callback_query(call.id)
     chat_id = str(call.message.chat.id)
-    prompt_text = "یه گزارش کامل از پیام های این چت تا لان بکو"
-    logging.info(f"Option 'گزارش روزانه' selected for chat {chat_id}.")
+    prompt_text = """
+    لطفاً کل تاریخچه این چت را به عنوان منبع بررسی در نظر بگیر و فقط پیام‌های مرتبط با فعالیت‌های کاری، تسک‌ها، ورود و خروج و کارهای مرتبط را تحلیل کن. سپس یک گزارش روزانه کامل ارائه بده که شامل موارد زیر باشد:
+
+     **آنالیز تیم:**  
+    - بررسی کلی فعالیت‌های کاری تیم  
+    - نمایش تسک های امروز تمام تیم به همراه وضعیت هر تسک ، انجام شده یا نشده
+    - آنالیز پیشرفت تیم در مسیر پروژه ها
+    - تخصیص یک نمره کلی (بین 1 تا 10) به تیم بر اساس عملکرد کلی  
+    """
+    logging.info(f"Option ' گزارش روزانه تیم' selected for chat {chat_id}.")
     process_option_prompt(chat_id, prompt_text)
 
 @bot.callback_query_handler(func=lambda call: call.data == "option_analyze_today")
 def handle_option_analyze_today(call):
     bot.answer_callback_query(call.id)
     chat_id = str(call.message.chat.id)
-    prompt_text = "طبق پیام های ما تا الان در این چت یک آنالیز و گزارش از کارای تمام اعضا بنویس"
+    prompt_text = "     لطفاً کل تاریخچه این چت را به عنوان منبع بررسی در نظر بگیر و فقط پیام‌های مرتبط با فعالیت‌های کاری، تسک‌ها، ورود و خروج و کارهای مرتبط را تحلیل کن. سپس یک گزارش روزانه کامل برای هر یوزر بنویس و با آنالیز دقیق هر یوزر یه نمره از 1 تا 10 بده و یوزرر هارو بر اساس نمره مرتب کن:"
     logging.info(f"Option 'آنالیز امروز اعضا' selected for chat {chat_id}.")
     process_option_prompt(chat_id, prompt_text)
 
@@ -400,7 +433,9 @@ def handle_option_analyze_today(call):
 def handle_option_tasks_today(call):
     bot.answer_callback_query(call.id)
     chat_id = str(call.message.chat.id)
-    prompt_text = "طبق پیام های ما تا الان در این چت تسک های هر فرد را جداگگانه بنویس"
+    prompt_text = """
+    براساس تاریخچه پیام‌های این چت، برای هر کاربر لیست تسک‌هایی که به انجام آن‌ها اشاره شده است را جداگانه تهیه کن. همچنین، وضعیت هر تسک (انجام شده یا انجام نشده) را مشخص کن.
+    """
     logging.info(f"Option 'تسک های امروز' selected for chat {chat_id}.")
     process_option_prompt(chat_id, prompt_text)
 
@@ -464,7 +499,7 @@ def handle_message(message):
         logging.info(f"AI response for chat {chat_id}: {ai_response.content}")
         bot.edit_message_text(ai_response.content, chat_id=chat_id, message_id=placeholder_message.message_id)
     except Exception as e:
-        error_message = f"متاسفم، مشکلی در پردازش درخواست شما پیش آمد. لطفاً دوباره تلاش کنید.\n\nError: {str(e)}"
+        error_message = f"متاسفم، مشکلی در پردازش درخواست شما پیش آمد. لطفاً دوباره تلاش کنید.\n\nErroيالr: {str(e)}"
         bot.edit_message_text(error_message, chat_id=chat_id, message_id=placeholder_message.message_id)
         logging.error(f"Error invoking chain for chat {chat_id}: {e}")
 
