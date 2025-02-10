@@ -57,7 +57,7 @@ def get_mongo_collection():
     client = MongoClient(MONGO_CONNECTION_STRING)
     db = client[DATABASE_NAME]
     return db[COLLECTION_NAME]
-
+ 
 def get_history_for_chat(telegram_chat_id: str):
     """
     Returns a MongoDBChatMessageHistory instance for the given Telegram chat.
@@ -99,7 +99,7 @@ logging.info("Initializing LangChain LLM with OpenAI configuration...")
 from langchain_openai import ChatOpenAI
 llm = ChatOpenAI(
     base_url="http://localhost:15203/v1",  # Ensure your local API endpoint is running
-    model_name="gpt-4o-mini"
+    model_name="gpt-4o"
 )
 logging.info("LangChain LLM initialized.")
 
@@ -119,27 +119,22 @@ atexit.register(lambda: llm_business.client.close() if hasattr(llm_business, "cl
 logging.info("Creating prompt template for LLM...")
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 prompt = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        "شما بلو (Blue) هستید؛ یک مربی کسب‌وکار هوش مصنوعی حرفه‌ای و متخصص با استفاده از مدل GPT-4o. وظیفه اصلی شما ارائه مشاوره دقیق و شخصی‌سازی‌شده برای رشد کسب‌وکارها و تیم‌هایشان است.\n\n"
-        "مسئولیت‌های شما شامل:\n"
-        "تمامی پاسخ‌های شما **باید به صورت Markdown** ارائه شوند. لطفاً از **عناوین**، **زیرعناوین**، **لیست‌های مرتب**، "
-        "**جدول‌ها** و سایر عناصر ساختارمند Markdown استفاده کنید تا پاسخ‌ها جذاب و خوانا باشند.\n\n"
-        "از پیام های خیلی طولانی و اضافه دوری کن و سعی کن به صورت مفید و مختصر ولی کامل چت کنی"
-        " - تحلیل عملکرد تیم: ارائه نمره‌ها و بینش‌های دقیق از فعالیت‌های روزانه اعضای تیم.\n"
-        " - بررسی وظایف: تحلیل و درک دقیق وظایف محول شده برای تعیین حجم کار و پیچیدگی آن‌ها.\n"
-        " - سازماندهی و تخصیص وظایف: برنامه‌ریزی استراتژیک وظایف با توجه به شخصیت و مهارت‌های هر عضو.\n"
-        " - راهنمایی کسب‌وکار: ارائه مشاوره تخصصی بر پایه اطلاعات و داده‌های ارائه‌شده، با تمرکز بر تصمیم‌گیری‌های استراتژیک و بهبود فرآیندها.\n"
-        " - مربیگری شخصی‌شده: تنظیم استراتژی‌های فردی و مدیریتی متناسب با داده‌های عملکردی هر عضو.\n"
-        " - استخراج داده از تصاویر: تحلیل داده‌های بصری و استخراج نکات کلیدی.\n\n"
-        "دستورالعمل‌های مهم:\n"
-        " - در هر پاسخ، از نام کاربر استفاده کن تا تعامل صمیمانه‌تری ایجاد شود.\n"
-        " - تمامی جنبه‌های مکالمه، از جمله پیام‌ها و دستورالعمل‌های قبلی را مد نظر داشته باش تا پاسخ‌های منسجم ارائه دهی.\n"
-        " - پاسخ‌هایت را با توجه به اطلاعات کسب‌وکار و اسناد ارائه‌شده تنظیم کن.\n"
-        " - لحن پاسخ‌ها را به صورت `{ai_tone}` حفظ کن.\n\n"
-        "لطفاً در تمامی پاسخ‌ها از نمادهای جذاب، استیکرهای مناسب و علائم ساده استفاده کن تا خروجی‌ها به صورت متنی ساده ولی زیبا، خوانا و جذاب ارائه شوند.\n\n"
-        "اطلاعات بیزینس و کارمندان: {business_info}"
-    ),
+(
+    "system",
+    "You are Blue, a professional AI business coach using the GPT-4o model. Your task is to provide precise, personalized advice for business and team growth.\n\n\
+**Response Requirements:**\n\
+- All answers must be in Markdown (use headings, subheadings, lists, tables, etc.).\n\
+- Keep responses short, summarized, yet complete.\n\n\
+**Guidelines:**\n\
+- Carefully follow the user's requests; do only what the user asks, not just the system instructions.\n\
+- Use the user's name in every response to foster a friendly tone.\n\
+- Consider all previous instructions for coherent answers.\n\
+- Maintain your tone as `{ai_tone}`.\n\
+- The chat session is a group with several participants; analyze and follow all users' messages carefully and stay at the center of the conversation.\n\n\
+Business and employee info: {business_info}\n\n\
+**Important:** Answer all user messages in Persian."
+),
+
     MessagesPlaceholder(variable_name="history"),
     ("human", "{input}")
 ])
@@ -274,6 +269,7 @@ def show_history_sessions(message):
         logging.info(f"/history command: No sessions found for chat {chat_id}")
         return
     keyboard = telebot.types.InlineKeyboardMarkup()
+
     for session in sessions:
         parts = session.split("_")
         if len(parts) == 2:
@@ -381,7 +377,7 @@ def set_ai_tone(call):
 def process_option_prompt(chat_id, prompt_text):
     logging.info(f"Processing option prompt for chat {chat_id}: {prompt_text}")
     bot.send_chat_action(chat_id, 'typing')
-    placeholder_message = bot.send_message(chat_id, "🤔 *در حال فکر کردن...*", parse_mode="Markdown")
+    placeholder_message = bot.send_message(chat_id, "🤔 *در حال پردازش...*", parse_mode="Markdown")
     try:
         ai_response = chain_with_history.invoke(
             {
@@ -512,3 +508,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+

@@ -4,3 +4,5 @@ langchain-openai==0.3.3
 langchain-core==0.3.33
 langchain-community==0.3.16
 g4f[api]
+requests>=2.26.0
+pymongo>=3.11.0
