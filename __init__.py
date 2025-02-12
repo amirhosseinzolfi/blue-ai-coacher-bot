@@ -1,1 +1,1 @@
-# This file makes the "blue-ai-coacher-bot" folder a package for Python imports.
+# (This file is intentionally left blank to mark the directory as a package.)
