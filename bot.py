@@ -4,32 +4,28 @@ Telegram Business Coder Bot using LangChain and MongoDB.
 
 This bot leverages GPT-based models to provide business advice via Telegram.
 It supports multimodal inputs (text and images) and uses persistent history storage.
-It also includes history optimization via summarization.
+It is "group aware" – in group chats it records all messages (even those not addressed to the bot)
+so that when a user asks a question the bot can answer with full context.
 
 LangChain History & Memory Options:
-    - InMemoryChatMessageHistory: Ephemeral, stored in RAM.
-    - MongoDBChatMessageHistory: Persistent history stored in MongoDB.
-    - ConversationBufferMemory: Stores entire conversation.
-    - ConversationBufferWindowMemory: Stores only a recent window of messages.
-    - ConversationSummaryMemory: Summarizes older conversation for efficiency.
-    - ConversationEntityMemory: Tracks and extracts key entities.
-    
-This code uses:
-    • MongoDBChatMessageHistory for persistence.
-    • A summarization chain (via load_summarize_chain) to generate summaries.
-    
-The bot has the following new commands:
-    - /new_chat: Create a new conversation session.
-    - /history: List all previous sessions (with counts and summaries) for the current chat.
-    - /summarize: Show a summary of the current conversation session.
+    • InMemoryChatMessageHistory: Ephemeral, RAM-only.
+    • MongoDBChatMessageHistory: Persistent history in MongoDB.
+    • ConversationBufferMemory / WindowMemory: Full or sliding-window conversation.
+    • ConversationSummaryMemory: Summarizes old conversation.
+    • ConversationEntityMemory: Tracks key entities.
 
-The code is organized into:
-    1. LangChain Integration (LLM initialization, prompt template, history chain)
-    2. Telegram Bot Integration (command handlers, multimodal input handling)
-    
+This bot uses MongoDBChatMessageHistory and a summarization chain to generate history summaries.
+
+New Commands:
+    - /new_chat: Start a new chat session.
+    - /history: List all previous sessions (with counts and summaries) for this chat.
+    - /options: Additional functions (Daily Tasks, Instagram Story Idea, Chat Report)
+
 Multimodal Input Instructions:
-    For photo messages, we prepare a list of blocks (text and image block with a data URI)
-    and use a helper function to format that list into a string for prompt logging.
+    For photo messages, we construct a list of blocks (text and image_url blocks with a data URI).
+    A helper function formats that list to a string for prompt logging.
+
+All responses are in Persian.
 """
 
 # ============================================
@@ -45,17 +41,25 @@ import time
 import json
 import base64
 import requests
+import re  # For refining markdown responses and escaping characters
 import telebot
 from pymongo import MongoClient
+import io
+import PyPDF2  # Ensure PyPDF2 is installed
+import g4f
 
-# For Windows: use WindowsSelectorEventLoopPolicy to avoid warnings
+from g4f.client import Client
+
+client = Client()
+
+# For Windows: avoid asyncio warnings
 if os.name == 'nt':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-# Disable SSL verification for Telebot API helper (TESTING ONLY)
+# Disable SSL verification for testing (DO NOT use in production)
 import telebot.apihelper as apihelper
 apihelper.SESSION = requests.Session()
-apihelper.SESSION.verify = False  # WARNING: Disable SSL verification ONLY for testing
+apihelper.SESSION.verify = False
 
 from telebot.types import BotCommandScopeAllGroupChats, BotCommandScopeDefault, BotCommand
 
@@ -63,19 +67,24 @@ from telebot.types import BotCommandScopeAllGroupChats, BotCommandScopeDefault, 
 # Global Configuration and API Keys
 # ============================================
 TELEGRAM_BOT_TOKEN = "7796762427:AAGDTTAt6qn0-bTpnkejqsy8afQJLZhWkuk"  # Replace with your actual token
-GOOGLE_API_KEY = "AIzaSyBAHu5yR3ooMkyVyBmdFxw-8lWyaExLjjE"           # Replace with your actual API key
+GOOGLE_API_KEY = "AIzaSyBAHu5yR3ooMkyVyBmdFxw-8lWyaExLjjE"           # Replace with your actual key
 OPENAI_API_KEY = "123"  # Replace with your actual OpenAI API key
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
-# Global dictionaries for per-chat settings
-chat_session_map = {}     # Maps Telegram chat id to current session id (format: "{chat_id}_{timestamp}")
-business_info_map = {}    # Stores business info per chat_id
-ai_tone_map = {}          # Stores AI tone per chat_id (default: "دوستانه")
+# Global settings for chat sessions and other options
+chat_session_map = {}     # Maps Telegram chat id to current session id
+business_info_map = {}    # Business info per chat id
+ai_tone_map = {}          # AI tone per chat id (default: "دوستانه")
+business_info_update_pending = {}  # Flag for pending business info update
+business_info_mode = {}   # NEW: Tracks update mode ("replace" or "append")
+# NEW: Add pending update flag for AI tone
+ai_tone_update_pending = {}
 
-# MongoDB configuration for chat histories
+# MongoDB configuration
 MONGO_CONNECTION_STRING = "mongodb://localhost:27017"
 DATABASE_NAME = "chat_db"
 COLLECTION_NAME = "chat_histories"
+BUSINESS_INFO_COLLECTION = "user_business_info"  # New collection for persistent business info
 
 # ============================================
 # Logging Configuration
@@ -85,11 +94,9 @@ logging.basicConfig(
     format='[%(asctime)s] [%(levelname)s] [%(threadName)s] %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-# Suppress excessive logs from external libraries.
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("g4f").setLevel(logging.INFO)
-
 logging.info("Logging configured (INFO level for our messages, external libraries suppressed).")
 
 # ============================================
@@ -98,7 +105,7 @@ logging.info("Logging configured (INFO level for our messages, external librarie
 try:
     from g4f.api import run_api
 except ImportError:
-    logging.error("g4f.api module not found. Please install the 'g4f' package.")
+    logging.error("g4f.api module not found. Install the 'g4f' package.")
     run_api = None
 
 if run_api is not None:
@@ -111,9 +118,6 @@ else:
     logging.warning("G4F API server not started due to missing module.")
 
 def wait_for_api_server(timeout=30):
-    """
-    Ping the /chat/completions endpoint until the server responds or a timeout occurs.
-    """
     base_url = "http://localhost:15203/v1/chat/completions"
     start_time = datetime.datetime.now()
     logging.info("Waiting for the G4F API server to become available...")
@@ -121,10 +125,10 @@ def wait_for_api_server(timeout=30):
         try:
             response = requests.post(base_url, json={"messages": [{"role": "system", "content": "ping"}]}, timeout=5)
             if response.ok:
-                logging.info("G4F API server is up and running.")
-                return
+                logging.info("G4F API server responded successfully.")
+                break  # Found server, break the loop.
         except Exception:
-            pass  # Suppress repeated error messages.
+            pass
         if (datetime.datetime.now() - start_time).seconds > timeout:
             logging.error("API server not available after waiting 30 seconds.")
             return
@@ -136,43 +140,116 @@ wait_for_api_server()
 # Helper: Format Multimodal Input for Logging
 # ============================================
 def format_multimodal_input(input_val):
-    """
-    Convert a multimodal input (list of blocks) into a string for logging/prompt formatting.
-    """
     if isinstance(input_val, list):
         parts = []
         for block in input_val:
             if block.get("type") == "text":
-                parts.append(block.get("text", ""))
+                parts.append(block.get("content", ""))
             elif block.get("type") == "image_url":
-                url = block.get("image_url", {}).get("url", "")
-                parts.append(f"[IMAGE: {url[:50]}...]")
+                parts.append("[Image]")
         return "\n".join(parts)
     return str(input_val)
+
+# ============================================
+# Helper: Refine and Escape AI Markdown Response for Telegram View
+# ============================================
+def refine_ai_response(response_md: str) -> str:
+    """
+    Refines the AI's markdown response for a modern Telegram view by:
+      1. Replacing headings with modern stickers
+      2. Replacing list markers with 🔹
+      3. Escaping special characters while preserving Markdown formatting
+    """
+    parts = response_md.split('```')
+    for i in range(len(parts)):
+        if i % 2 == 0:
+            parts[i] = re.sub(r'^####\s+(.*?)$', r'🔶 \1', parts[i], flags=re.MULTILINE)
+            parts[i] = re.sub(r'^###\s+(.*?)$', r'⭐ \1', parts[i], flags=re.MULTILINE)
+            parts[i] = re.sub(r'^##\s+(.*?)$', r'🔷 \1', parts[i], flags=re.MULTILINE)
+            parts[i] = re.sub(r'^#\s+(.*?)$', r'🟣 \1', parts[i], flags=re.MULTILINE)
+            parts[i] = re.sub(r'^(?:\s*[-*]\s+)(.*?)$', r'🔹 \1', parts[i], flags=re.MULTILINE)
+            parts[i] = re.sub(r'^(?:\s*\d+\.\s+)(.*?)$', r'🔹 \1', parts[i], flags=re.MULTILINE)
+            special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+            temp = parts[i]
+            placeholders = {
+                'bold': (r'\*\*(.+?)\*\*', '‡B‡\\1‡B‡'),
+                'italic': (r'\*(.+?)\*', '‡I‡\\1‡I‡'),
+                'strike': (r'~~(.+?)~~', '‡S‡\\1‡S‡'),
+                'code': (r'`(.+?)`', '‡C‡\\1‡C‡'),
+                'link': (r'\[(.+?)\]\((.+?)\)', '‡L‡\\1‡U‡\\2‡L‡'),
+            }
+            for name, (pattern, repl) in placeholders.items():
+                temp = re.sub(pattern, repl, temp)
+            for char in special_chars:
+                temp = temp.replace(char, f"\\{char}")
+            restorations = {
+                '‡B‡': '**',
+                '‡I‡': '*',
+                '‡S‡': '~~',
+                '‡C‡': '`',
+                '‡L‡': '[',
+                '‡U‡': '](',
+            }
+            for placeholder, markdown in restorations.items():
+                temp = temp.replace(placeholder, markdown)
+            parts[i] = temp
+        else:
+            parts[i] = f'`{parts[i]}`'
+    return ''.join(parts)
+
+def escape_markdown_v2(text: str) -> str:
+    """
+    Escape special characters for Telegram's MarkdownV2 format.
+    """
+    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    parts = text.split('```')
+    for i in range(len(parts)):
+        if i % 2 == 0:
+            for char in special_chars:
+                parts[i] = parts[i].replace(char, f"\\{char}")
+        else:
+            parts[i] = f'`{parts[i]}`'
+    return ''.join(parts)
+
+# ============================================
+# Group Message Listener (for Group Chats)
+# ============================================
+def group_message_listener(messages):
+    for message in messages:
+        if message.chat.type in ['group', 'supergroup']:
+            chat_id = str(message.chat.id)
+            sender = message.from_user.first_name or message.from_user.username
+            if message.content_type != "text":
+                if message.content_type == "photo":
+                    text = f"{sender} sent a photo."
+                    save_message_to_history(chat_id, "user", text)
+                elif message.content_type in ['video', 'audio', 'document']:
+                    text = f"{sender} sent a {message.content_type}."
+                    save_message_to_history(chat_id, "user", text)
+
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+bot.set_update_listener(group_message_listener)
 
 # ============================================
 # SECTION 1: LangChain Integration
 # ============================================
 logging.info("Initializing LangChain LLM integrations...")
 
-# Import LangChain modules and message types
 from langchain_openai import ChatOpenAI
 from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
 
-# Initialize primary LangChain LLM for business advice
 llm = ChatOpenAI(
     base_url="http://localhost:15203/v1",
-    model_name="gemini-1.5-flash",
+    model_name="gpt-4o",
     temperature=0.5
 )
 logging.info("Primary LangChain LLM initialized.")
 
-# Initialize secondary LangChain LLM for business info summarization (if needed)
 llm_business = ChatOpenAI(
     base_url="http://localhost:15203/v1",
-    model_name="gemini-1.5-flash",
+    model_name="gpt-4o",
     temperature=0.5
 )
 logging.info("Secondary LangChain LLM for business info summarization initialized.")
@@ -180,26 +257,18 @@ logging.info("Secondary LangChain LLM for business info summarization initialize
 atexit.register(lambda: llm.client.close() if hasattr(llm, "client") and callable(getattr(llm.client, "close", None)) else None)
 atexit.register(lambda: llm_business.client.close() if hasattr(llm_business, "client") and callable(getattr(llm_business.client, "close", None)) else None)
 
-# Define the prompt template using chat message templates.
-prompt_template_text = """
-You are Blue, a professional AI business coach using the GPT-4o model. Your role is to provide concise, actionable, and personalized business advice based on user input and session history.
+# ============================================
+# Load Prompts from JSON file
+# ============================================
+with open(os.path.join(os.path.dirname(__file__), "prompts", "prompts.json"), "r", encoding="utf-8") as f:
+    prompts = json.load(f)
+prompt_template_text = prompts.get("prompt_template_text", "")
+daily_task_prompt = prompts.get("daily_task_prompt", "")
+summary_prompt = prompts.get("summary_prompt", "")
+daily_report_prompt = prompts.get("daily_report_prompt", "")
+insta_idea_prompt = prompts.get("insta_idea_prompt", "")
+image_analyzer_prompt = prompts.get("image_analyzer_prompt", "")
 
-**Response Requirements:**
-- Answer in Markdown using clear headings and bullet points.
-- Keep your response brief (no more than 150 words) and include only essential information.
-- Use the user's name in every response for a personal touch.
-
-**Guidelines:**
-- Follow the user's request exactly; do not include extra background details unless asked.
-- Maintain your tone as `{ai_tone}`.
-- Reference the business context `{business_info}` only when directly relevant.
-
-**Multimodal Input Note:**
-If the input is a list containing a block with "type": "image_url", the "url" field holds a data URI of an image.
-Please analyze the image content accordingly.
-
-Important: Answer all messages in Persian.
-"""
 prompt = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(prompt_template_text),
     MessagesPlaceholder(variable_name="history"),
@@ -207,7 +276,6 @@ prompt = ChatPromptTemplate.from_messages([
 ])
 logging.info("LangChain prompt template created.")
 
-# Create a chain with message history using MongoDB
 chain = prompt | llm
 chain_with_history = RunnableWithMessageHistory(
     chain,
@@ -223,9 +291,6 @@ logging.info("LangChain chain with message history configured.")
 from langchain.chains.summarize import load_summarize_chain
 
 def get_summarized_history_for_session(session_id: str) -> str:
-    """
-    Load messages from a session (using MongoDBChatMessageHistory) and generate a summary.
-    """
     from langchain_mongodb.chat_message_histories import MongoDBChatMessageHistory
     history_obj = MongoDBChatMessageHistory(
         session_id=session_id,
@@ -248,19 +313,35 @@ def get_summarized_history_for_session(session_id: str) -> str:
 # MongoDB Helper Functions
 # ============================================
 def get_mongo_collection():
-    """
-    Connect to MongoDB and return the chat histories collection.
-    """
     client = MongoClient(MONGO_CONNECTION_STRING)
     db = client[DATABASE_NAME]
     logging.info("Connected to MongoDB (database: '%s').", DATABASE_NAME)
     return db[COLLECTION_NAME]
 
+def get_business_info_collection():
+    """Get MongoDB collection for storing permanent business info per user."""
+    client = MongoClient(MONGO_CONNECTION_STRING)
+    db = client[DATABASE_NAME]
+    return db[BUSINESS_INFO_COLLECTION]
+
+def get_user_business_info(chat_id: str) -> str:
+    """Get business info for a user from MongoDB."""
+    collection = get_business_info_collection()
+    result = collection.find_one({"chat_id": chat_id})
+    return result["business_info"] if result else ""
+
+def save_user_business_info(chat_id: str, info: str):
+    """Save or update business info for a user in MongoDB."""
+    collection = get_business_info_collection()
+    collection.update_one(
+        {"chat_id": chat_id},
+        {"$set": {"business_info": info, "updated_at": datetime.datetime.utcnow()}},
+        upsert=True
+    )
+    logging.info(f"Updated business info for chat '{chat_id}'")
+
 def get_history_for_chat(telegram_chat_id: str):
-    """
-    Retrieve or create the chat history object for a given Telegram chat.
-    """
-    if telegram_chat_id not in chat_session_map:
+    if (telegram_chat_id not in chat_session_map):
         new_session_id = f"{telegram_chat_id}_{int(datetime.datetime.now().timestamp())}"
         chat_session_map[telegram_chat_id] = new_session_id
         logging.info("Created new session '%s' for chat '%s'.", new_session_id, telegram_chat_id)
@@ -282,19 +363,12 @@ def get_history_for_chat(telegram_chat_id: str):
     return history_obj
 
 def get_history_count(session_id: str):
-    """
-    Return the count of history messages for a given session.
-    """
     collection = get_mongo_collection()
     count = collection.count_documents({"session_id": {"$regex": f"^{session_id}"}})
     logging.debug("Session '%s' has %d messages in history.", session_id, count)
     return count
 
 def save_message_to_history(chat_id, role, content):
-    """
-    Save a message (with role: user, assistant, or system) to MongoDB history.
-    Uses LangChain's built-in message types for proper serialization.
-    """
     try:
         history_obj = get_history_for_chat(chat_id)
         if role == "user":
@@ -320,14 +394,10 @@ def save_message_to_history(chat_id, role, content):
 # ============================================
 logging.info("Initializing Telegram Bot...")
 
-# Initialize the Telegram Bot
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 logging.info("Telegram Bot initialized successfully.")
 
 def is_admin(chat_id, user_id):
-    """
-    Check if a user is an administrator in the given chat.
-    """
     try:
         member = bot.get_chat_member(chat_id, user_id)
         is_admin_status = member.status in ['creator', 'administrator']
@@ -338,15 +408,11 @@ def is_admin(chat_id, user_id):
         return False
 
 def setup_bot_commands():
-    """
-    Set up the bot commands for both private and group chats.
-    """
     commands = [
         BotCommand("start", "شروع ربات و نمایش اطلاعات چت"),
-        BotCommand("options", "انتخاب گزینه‌ها"),
         BotCommand("new_chat", "ایجاد جلسه چت جدید"),
         BotCommand("history", "نمایش تاریخچه جلسات"),
-        BotCommand("summarize", "خلاصه تاریخچه جلسه فعلی"),
+        BotCommand("options", "گزینه‌های اضافی"),
         BotCommand("help", "نمایش پیام راهنما"),
         BotCommand("settings", "تنظیمات ربات"),
         BotCommand("about", "اطلاعات ربات")
@@ -364,30 +430,23 @@ def setup_bot_commands():
     except Exception as e:
         logging.error("Exception during bot command setup: %s", e)
 
-# ---------------------------------------------
-# New Chat Command: /new_chat
-# ---------------------------------------------
+# -------------------------------
+# /new_chat Command: Create a new session.
+# -------------------------------
 @bot.message_handler(commands=['new_chat'])
 def new_chat(message):
-    """
-    Create a new chat session by generating a new session ID.
-    """
     chat_id = str(message.chat.id)
     new_session_id = f"{chat_id}_{int(datetime.datetime.now().timestamp())}"
     chat_session_map[chat_id] = new_session_id
     logging.info("New chat session created for chat '%s': %s", chat_id, new_session_id)
-    response_text = "🆕 جلسه چت جدید ایجاد شد. اکنون شما یک گفتگو جدید دارید."
-    bot.reply_to(message, response_text, parse_mode="Markdown")
+    response_text = "🆕 جلسه چت جدید ایجاد شد. جلسه قبلی در تاریخچه ذخیره شده است."
+    bot.reply_to(message, escape_markdown_v2(response_text), parse_mode="MarkdownV2")
 
-# ---------------------------------------------
-# History Command: /history
-# ---------------------------------------------
+# -------------------------------
+# /history Command: List previous sessions.
+# -------------------------------
 @bot.message_handler(commands=['history'])
 def show_history(message):
-    """
-    List all previous chat sessions for the current chat.
-    For each session, show its session ID, creation time, message count, and a summary.
-    """
     chat_id = str(message.chat.id)
     collection = get_mongo_collection()
     sessions = collection.distinct("session_id", {"session_id": {"$regex": f"^{chat_id}_"}})
@@ -413,34 +472,13 @@ def show_history(message):
             response_lines.append(f"Session: `{s}`\nCreated: {time_str}\nMessages: {count}\nSummary: {summary}\n")
         response_text = "\n".join(response_lines)
     logging.info("History command executed for chat '%s'.", chat_id)
-    bot.reply_to(message, response_text, parse_mode="Markdown")
+    bot.reply_to(message, response_text, parse_mode="MarkdownV2")
 
-# ---------------------------------------------
-# Summarize Command: /summarize
-# ---------------------------------------------
-@bot.message_handler(commands=['summarize'])
-def summarize_history(message):
-    """
-    Show a summary of the current session's history.
-    """
-    chat_id = str(message.chat.id)
-    current_session = chat_session_map.get(chat_id)
-    if not current_session:
-        response_text = "هیچ تاریخچه فعالی پیدا نشد."
-    else:
-        summary = get_summarized_history_for_session(current_session)
-        response_text = f"خلاصه تاریخچه جلسه فعلی (`{current_session}`):\n\n{summary}"
-    logging.info("Summarize command executed for chat '%s'.", chat_id)
-    bot.reply_to(message, response_text, parse_mode="Markdown")
-
-# ---------------------------------------------
-# Telegram Command Handlers: /start, /help, /about, /settings
-# ---------------------------------------------
+# -------------------------------
+# /start Command: Send welcome message.
+# -------------------------------
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    """
-    Handle the /start command to welcome the user.
-    """
     chat_id = str(message.chat.id)
     welcome_message = (
         "سلام! من بلو هستم، همراه هوشمند کسب‌وکار تو! 🚀✨\n\n"
@@ -459,49 +497,48 @@ def send_welcome(message):
         "فقط کافیست صدام کنی. 😉\n"
     )
     logging.info("Processing /start command for chat '%s'.", chat_id)
-    bot.reply_to(message, welcome_message, parse_mode="Markdown")
+    bot.reply_to(message, escape_markdown_v2(welcome_message), parse_mode="MarkdownV2")
     save_message_to_history(chat_id, "system", welcome_message)
 
+# -------------------------------
+# /help Command: Send help information.
+# -------------------------------
 @bot.message_handler(commands=['help'])
 def send_help(message):
-    """
-    Handle the /help command to provide usage instructions.
-    """
     help_text = (
         "🤖 *دستورات ربات:*\n\n"
         " - `/start` - شروع ربات و نمایش اطلاعات چت\n"
         " - `/new_chat` - ایجاد جلسه چت جدید\n"
         " - `/history` - نمایش تاریخچه جلسات\n"
-        " - `/summarize` - خلاصه تاریخچه جلسه فعلی\n"
-        " - `/options` - انتخاب گزینه‌ها\n"
+        " - `/options` - گزینه‌های اضافی (وظایف روزانه، ایده استوری اینستاگرام، گزارش تاریخچه چت)\n"
         " - `/settings` - تنظیمات ربات (تنظیم لحن و اطلاعات کسب‌وکار)\n"
         " - `/help` - نمایش پیام راهنما\n"
         " - `/about` - اطلاعات ربات\n\n"
         "در گروه‌ها، من تنها زمانی پاسخ می‌دهم که منشن شوم یا کلمه *بلو* در پیام وجود داشته باشد."
     )
     logging.info("Processing /help command.")
-    bot.reply_to(message, help_text, parse_mode="Markdown")
+    bot.reply_to(message, escape_markdown_v2(help_text), parse_mode="MarkdownV2")
     save_message_to_history(str(message.chat.id), "system", help_text)
 
+# -------------------------------
+# /about Command: Send information about the bot.
+# -------------------------------
 @bot.message_handler(commands=['about'])
 def about_bot(message):
-    """
-    Handle the /about command to provide information about the bot.
-    """
     about_text = (
         "🤖 *درباره ربات:*\n\n"
         "من **بلو** هستم، مربی کسب‌وکار هوشمند با پشتیبانی از فناوری LangChain و مدل‌های OpenAI.\n"
         "برای اطلاعات بیشتر از دستور `/help` استفاده کنید."
     )
     logging.info("Processing /about command for chat '%s'.", message.chat.id)
-    bot.reply_to(message, about_text, parse_mode="Markdown")
+    bot.reply_to(message, escape_markdown_v2(about_text), parse_mode="MarkdownV2")
     save_message_to_history(str(message.chat.id), "system", about_text)
 
+# -------------------------------
+# /settings Command: Show settings options.
+# -------------------------------
 @bot.message_handler(commands=['settings'])
 def bot_settings(message):
-    """
-    Handle the /settings command to provide configuration options.
-    """
     chat_id = str(message.chat.id)
     keyboard = telebot.types.InlineKeyboardMarkup()
     btn_business_info = telebot.types.InlineKeyboardButton("بارگذاری اطلاعات بیزینس", callback_data="load_business_info")
@@ -512,23 +549,265 @@ def bot_settings(message):
         "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
     )
     logging.info("Processing /settings command for chat '%s'.", chat_id)
-    bot.reply_to(message, settings_text, reply_markup=keyboard, parse_mode="Markdown")
+    bot.reply_to(message, settings_text, reply_markup=keyboard, parse_mode="MarkdownV2")
     save_message_to_history(chat_id, "system", settings_text)
 
-# ---------------------------------------------
-# Telegram Content Handlers for Text and Photo
-# ---------------------------------------------
+# -------------------------------
+# /options Command: Present additional functions.
+# -------------------------------
+@bot.message_handler(commands=['options'])
+def options_handler(message):
+    chat_id = str(message.chat.id)
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    btn_daily_tasks = telebot.types.InlineKeyboardButton("تسک های روزانه", callback_data="daily_tasks")
+    btn_instagram_story = telebot.types.InlineKeyboardButton("ایده استوری اینستاگرام", callback_data="instagram_story_idea")
+    btn_chat_report = telebot.types.InlineKeyboardButton("گزارش روزانه", callback_data="chat_report")
+    keyboard.add(btn_daily_tasks, btn_instagram_story, btn_chat_report)
+    options_text = "⚙️ *انتخاب گزینه‌ها:*\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
+    logging.info("Processing /options command for chat '%s'.", chat_id)
+    bot.reply_to(message, options_text, reply_markup=keyboard, parse_mode="MarkdownV2")
+    save_message_to_history(chat_id, "system", options_text)
+
+# -------------------------------
+# Callback Handler for Daily Tasks Button
+# -------------------------------
+@bot.callback_query_handler(func=lambda call: call.data == "daily_tasks")
+def handle_daily_tasks(call):
+    chat_id = str(call.message.chat.id)
+    sender_first_name = call.from_user.first_name or call.from_user.username
+    logging.info("Daily Tasks option selected by '%s' in chat '%s'.", sender_first_name, chat_id)
+    
+    # Use JSON-based daily task prompt text
+    prompt_input = daily_task_prompt
+    
+    ai_tone = ai_tone_map.get(chat_id, "دوستانه")
+    business_info = business_info_map.get(chat_id, "")
+    
+    bot.send_chat_action(chat_id, 'typing')
+    placeholder_message = bot.send_message(chat_id, escape_markdown_v2("🤔 در حال پردازش وظایف روزانه..."), parse_mode="MarkdownV2")
+    
+    try:
+        ai_response = chain_with_history.invoke(
+            {"input": prompt_input, "ai_tone": ai_tone, "business_info": business_info},
+            config={"configurable": {"session_id": chat_id}}
+        )
+        refined_response = refine_ai_response(ai_response.content)
+        save_message_to_history(chat_id, "assistant", refined_response)
+        logging.info("Daily Tasks response sent to chat '%s'.", chat_id)
+        bot.edit_message_text(refined_response, chat_id=chat_id,
+                              message_id=placeholder_message.message_id,
+                              parse_mode="MarkdownV2")
+    except Exception as e:
+        error_message = escape_markdown_v2(
+            "❌ متأسفم، مشکلی در پردازش وظایف روزانه پیش آمد. لطفاً دوباره تلاش کنید."
+        )
+        logging.error("Error in Daily Tasks handler for chat '%s': %s", chat_id, e)
+        bot.edit_message_text(
+            error_message,
+            chat_id=chat_id,
+            message_id=placeholder_message.message_id,
+            parse_mode="MarkdownV2"
+        )
+
+# -------------------------------
+# Callback Handler for Instagram Story Idea Button
+# -------------------------------
+@bot.callback_query_handler(func=lambda call: call.data == "instagram_story_idea")
+def handle_instagram_story_idea(call):
+    chat_id = str(call.message.chat.id)
+    today_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    sender_first_name = call.from_user.first_name or call.from_user.username
+    logging.info("Instagram Story Idea option selected by '%s' in chat '%s'.", sender_first_name, chat_id)
+    
+    business_info = business_info_map.get(chat_id, "")
+    # Use JSON-based Instagram idea prompt text
+    prompt_input = insta_idea_prompt
+    
+    ai_tone = ai_tone_map.get(chat_id, "دوستانه")
+    
+    bot.send_chat_action(chat_id, 'typing')
+    placeholder_message = bot.send_message(chat_id, escape_markdown_v2("🤔 در حال پردازش ایده استوری اینستاگرام..."), parse_mode="MarkdownV2")
+    
+    try:
+        ai_response = chain_with_history.invoke(
+            {"input": prompt_input, "ai_tone": ai_tone, "business_info": business_info},
+            config={"configurable": {"session_id": chat_id}}
+        )
+        refined_response = refine_ai_response(ai_response.content)
+        save_message_to_history(chat_id, "assistant", refined_response)
+        logging.info("Instagram Story Idea response sent to chat '%s'.", chat_id)
+        bot.edit_message_text(refined_response, chat_id=chat_id,
+                              message_id=placeholder_message.message_id,
+                              parse_mode="MarkdownV2")
+    except Exception as e:
+        error_message = escape_markdown_v2(
+            "❌ متأسفم، مشکلی در پردازش ایده استوری اینستاگرام پیش آمد. لطفاً دوباره تلاش کنید."
+        )
+        logging.error("Error in Instagram Story Idea handler for chat '%s': %s", chat_id, e)
+        bot.edit_message_text(
+            error_message,
+            chat_id=chat_id,
+            message_id=placeholder_message.message_id,
+            parse_mode="MarkdownV2"
+        )
+
+# -------------------------------
+# Callback Handler for Chat Report Button (Merged Summarize Functionality)
+# -------------------------------
+@bot.callback_query_handler(func=lambda call: call.data == "chat_report")
+def handle_chat_report(call):
+    chat_id = str(call.message.chat.id)
+    sender_first_name = call.from_user.first_name or call.from_user.username
+    logging.info("Chat Report option selected by '%s' in chat '%s'.", sender_first_name, chat_id)
+    
+    # Use JSON-based daily report prompt text
+    prompt_input = daily_report_prompt
+    
+    ai_tone = ai_tone_map.get(chat_id, "دوستانه")
+    business_info = business_info_map.get(chat_id, "")
+    
+    bot.send_chat_action(chat_id, 'typing')
+    placeholder_message = bot.send_message(chat_id, escape_markdown_v2("🤔 در حال پردازش گزارش تاریخچه چت کاربران..."), parse_mode="MarkdownV2")
+    
+    try:
+        ai_response = chain_with_history.invoke(
+            {"input": prompt_input, "ai_tone": ai_tone, "business_info": business_info},
+            config={"configurable": {"session_id": chat_id}}
+        )
+        refined_response = refine_ai_response(ai_response.content)
+        save_message_to_history(chat_id, "assistant", refined_response)
+        logging.info("Chat Report response sent to chat '%s'.", chat_id)
+        bot.edit_message_text(refined_response, chat_id=chat_id,
+                              message_id=placeholder_message.message_id,
+                              parse_mode="MarkdownV2")
+    except Exception as e:
+        error_message = escape_markdown_v2(
+            "❌ متأسفم، مشکلی در پردازش گزارش تاریخچه چت کاربران پیش آمد. لطفاً دوباره تلاش کنید."
+        )
+        logging.error("Error in Chat Report handler for chat '%s': %s", chat_id, e)
+        bot.edit_message_text(
+            error_message,
+            chat_id=chat_id,
+            message_id=placeholder_message.message_id,
+            parse_mode="MarkdownV2"
+        )
+
+# -------------------------------
+# New Callback Handler: Load Business Info
+# -------------------------------
+@bot.callback_query_handler(func=lambda call: call.data == "load_business_info")
+def handle_load_business_info(call):
+    chat_id = str(call.message.chat.id)
+    current_info = get_user_business_info(chat_id)
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    if (current_info):
+        # If business info exists, allow user to replace or append
+        btn_replace = telebot.types.InlineKeyboardButton("تعویض اطلاعات", callback_data="replace_business_info")
+        btn_append = telebot.types.InlineKeyboardButton("افزودن به اطلاعات", callback_data="append_business_info")
+        keyboard.add(btn_replace, btn_append)
+        prompt_text = f"اطلاعات بیزینس فعلی:\n{current_info}\n\nآیا می‌خواهید آن را تعویض کنید یا اطلاعات جدید به آن اضافه شود؟"
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, prompt_text, reply_markup=keyboard)
+    else:
+        # No existing info: default to replace mode
+        business_info_update_pending[chat_id] = True
+        business_info_mode[chat_id] = "replace"
+        bot.answer_callback_query(call.id, "لطفاً اطلاعات بیزینس خود را به عنوان پیام ارسال کنید.")
+        bot.send_message(chat_id, "📄 لطفاً اطلاعات بیزینس خود را ارسال کنید:")
+
+# -------------------------------
+# New Callback Handler: Replace Business Info
+# -------------------------------
+@bot.callback_query_handler(func=lambda call: call.data == "replace_business_info")
+def handle_replace_business_info(call):
+    chat_id = str(call.message.chat.id)
+    business_info_update_pending[chat_id] = True
+    business_info_mode[chat_id] = "replace"
+    bot.answer_callback_query(call.id, "لطفاً اطلاعات جدید بیزینس را ارسال کنید تا جایگزین اطلاعات فعلی شود.")
+    bot.send_message(chat_id, "📄 اطلاعات جدید بیزینس خود را ارسال کنید:")
+
+# -------------------------------
+# New Callback Handler: Append Business Info
+# -------------------------------
+@bot.callback_query_handler(func=lambda call: call.data == "append_business_info")
+def handle_append_business_info(call):
+    chat_id = str(call.message.chat.id)
+    business_info_update_pending[chat_id] = True
+    business_info_mode[chat_id] = "append"
+    current_info = get_user_business_info(chat_id)
+    bot.answer_callback_query(call.id, "لطفاً اطلاعات جدید بیزینس را ارسال کنید تا به اطلاعات فعلی اضافه شود.")
+    bot.send_message(chat_id, f"📄 اطلاعات فعلی بیزینس:\n{current_info}\n\nاطلاعات جدید را ارسال کنید:")
+
+# Updated AI Tone Button Handler with inline keyboard for tone selection.
+@bot.callback_query_handler(func=lambda call: call.data == "ai_tone")
+def handle_ai_tone(call):
+    chat_id = str(call.message.chat.id)
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    btn_dostane = telebot.types.InlineKeyboardButton("دوستانه", callback_data="ai_tone_dostane")
+    btn_rasmi = telebot.types.InlineKeyboardButton("رسمی", callback_data="ai_tone_rasmi")
+    btn_professional = telebot.types.InlineKeyboardButton("حرفه ای و پروفشنال", callback_data="ai_tone_pro")
+    keyboard.add(btn_dostane, btn_rasmi, btn_professional)
+    bot.answer_callback_query(call.id)
+    bot.send_message(chat_id, "لطفاً یکی از لحن‌های زیر را انتخاب کنید:", reply_markup=keyboard)
+
+# New Callback Handler for selected AI Tone options.
+@bot.callback_query_handler(func=lambda call: call.data in ["ai_tone_dostane", "ai_tone_rasmi", "ai_tone_pro"])
+def select_ai_tone(call):
+    chat_id = str(call.message.chat.id)
+    tone_mapping = {
+        "ai_tone_dostane": ("دوستانه", "genearte a efficient prompt to give in insiturction"),
+        "ai_tone_rasmi": ("رسمی", "genearte a efficient prompt to give in insiturction"),
+        "ai_tone_pro": ("حرفه ای و پروفشنال", "genearte a efficient prompt to give in insiturction"),
+    }
+    selected = tone_mapping.get(call.data)
+    if selected:
+        ai_tone_map[chat_id] = f"{selected[0]}: {selected[1]}"
+        bot.answer_callback_query(call.id, f"لحن انتخاب شده: {selected[0]}")
+        bot.send_message(chat_id, f"✅ لحن هوش مصنوعی به '{selected[0]}' تغییر یافت.")
+
+# -------------------------------
+# Telegram Content Handlers for Photo and Text
+# -------------------------------
+LAST_IMAGE_ANALYSIS = {}  # Stores analysis from the last received image per chat
+
+# 1. Updated: Analyze image function now instructs LLM to respond in Persian.
+def analyze_image(image, user_text=None):
+    """
+    Analyze the given image with optional user text input.
+    """
+    prompt = ""
+    if user_text:
+        prompt += f"متن ورودی کاربر: {user_text}\n\n"
+    prompt += image_analyzer_prompt
+    
+    try:
+        response = client.chat.completions.create(
+            model="gemini-2.0-flash",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            image=image
+        )
+        # Handle different response formats
+        if hasattr(response.choices[0].message, 'content'):
+            return response.choices[0].message.content
+        elif isinstance(response.choices[0].message, dict):
+            return response.choices[0].message.get('content', '')
+        else:
+            return str(response.choices[0].message)
+    except Exception as e:
+        logging.error(f"Error in image analysis: {e}")
+        return "خطا در تحلیل تصویر. لطفاً دوباره تلاش کنید."
+
 @bot.message_handler(content_types=["photo"])
 def handle_photo(message):
-    """
-    Process messages containing photos:
-      - Download and encode the image.
-      - Construct a multimodal input as a list of blocks.
-      - Invoke the LangChain chain with the multimodal content.
-    """
     chat_id = str(message.chat.id)
     sender_first_name = message.from_user.first_name or message.from_user.username
-    logging.info("Received a photo message in chat '%s' from user '%s'.", chat_id, sender_first_name)
+    user_text = message.caption if message.caption else ""
+    logging.info("Received a photo message in chat '%s' from user '%s' with text: %s", chat_id, sender_first_name, user_text)
     
     try:
         file_id = message.photo[-1].file_id
@@ -536,112 +815,134 @@ def handle_photo(message):
         file_path = file_info.file_path
         file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
         logging.info("Downloading image from URL: %s", file_url)
+        
+        bot.send_chat_action(chat_id, 'typing')
+        placeholder_message = bot.reply_to(
+            message,
+            escape_markdown_v2("🤔 در حال تحلیل تصویر..."),
+            parse_mode="MarkdownV2"
+        )
+        
         response = requests.get(file_url)
         if response.status_code == 200:
-            image_data = base64.b64encode(response.content).decode("utf-8")
-            image_data_uri = f"data:image/jpeg;base64,{image_data}"
-            logging.info("Image downloaded and encoded successfully for chat '%s'.", chat_id)
+            # Analyze image with user text
+            image_analysis = analyze_image(response.content, user_text)
+            LAST_IMAGE_ANALYSIS[chat_id] = image_analysis
             
-            multimodal_content = [
-                {"type": "text", "text": message.caption if message.caption else "تصویر ارسال شده:"},
-                {"type": "image_url", "image_url": {"url": image_data_uri}}
-            ]
-            formatted_input = format_multimodal_input(multimodal_content)
-            logging.info("Constructed multimodal input for photo message in chat '%s'.\nInput preview:\n%s", chat_id, formatted_input)
+            # Use the same refinement process as text messages
+            refined_response = refine_ai_response(image_analysis)
+            save_message_to_history(chat_id, "user", f"{sender_first_name} sent an image" + (f" with text: {user_text}" if user_text else ""))
+            save_message_to_history(chat_id, "assistant", refined_response)
             
-            save_message_to_history(chat_id, "user", multimodal_content)
-            bot.send_chat_action(chat_id, 'typing')
-            placeholder_message = bot.reply_to(message, "🤔 *در حال پردازش تصویر و متن...*", parse_mode="Markdown")
-            
-            try:
-                ai_tone = ai_tone_map.get(chat_id, "دوستانه")
-                business_info = business_info_map.get(chat_id, "")
-                history = get_history_for_chat(chat_id)
-                log_data = {
-                    "Chat ID": chat_id,
-                    "User": sender_first_name,
-                    "AI Tone": ai_tone,
-                    "Business Info": business_info,
-                    "History Message Count": len(history.messages)
-                }
-                logging.info("Invoking LangChain chain for photo message in chat '%s'.\nPrompt details:\n%s",
-                             chat_id, json.dumps(log_data, indent=4, ensure_ascii=False))
-                
-                prompt_input = format_multimodal_input(multimodal_content)
-                full_prompt = prompt.format(input=prompt_input, ai_tone=ai_tone, business_info=business_info, history=history.messages)
-                logging.info("Full prompt sent to AI:\n%s", full_prompt)
-                
-                ai_response = chain_with_history.invoke(
-                    {"input": prompt_input, "ai_tone": ai_tone, "business_info": business_info},
-                    config={"configurable": {"session_id": chat_id}}
-                )
-                logging.info("LangChain chain returned response for chat '%s'.", chat_id)
-                save_message_to_history(chat_id, "assistant", ai_response.content)
-                logging.info("Chat session '%s' now has %d messages in history.",
-                             get_history_for_chat(chat_id).session_id,
-                             len(get_history_for_chat(chat_id).messages))
-                
-                bot.edit_message_text(ai_response.content, chat_id=chat_id,
-                                      message_id=placeholder_message.message_id,
-                                      parse_mode="Markdown")
-            except Exception as e:
-                error_message = (
-                    "❌ *متأسفم، مشکلی در پردازش تصویر و متن پیش آمد. لطفاً دوباره تلاش کنید.*\n\n"
-                    f"*Error:* `{str(e)}`"
-                )
-                bot.edit_message_text(error_message, chat_id=chat_id,
-                                      message_id=placeholder_message.message_id,
-                                      parse_mode="Markdown")
-                logging.error("Error invoking LangChain chain for photo in chat '%s': %s", chat_id, e)
+            bot.edit_message_text(
+                refined_response,
+                chat_id=chat_id,
+                message_id=placeholder_message.message_id,
+                parse_mode="MarkdownV2"
+            )
         else:
-            bot.reply_to(message, "❌ *خطا در دانلود تصویر. لطفاً دوباره تلاش کنید.*", parse_mode="Markdown")
-            logging.error("Error downloading image file for chat '%s'. HTTP status code: %s", chat_id, response.status_code)
+            bot.edit_message_text(
+                escape_markdown_v2("❌ بارگیری تصویر موفقیت‌آمیز نبود."),
+                chat_id=chat_id,
+                message_id=placeholder_message.message_id,
+                parse_mode="MarkdownV2"
+            )
     except Exception as ex:
-        bot.reply_to(message, "❌ *خطا در پردازش تصویر. لطفاً دوباره تلاش کنید.*", parse_mode="Markdown")
+        error_message = escape_markdown_v2("❌ *خطا در پردازش تصویر. لطفاً دوباره تلاش کنید.*")
+        bot.edit_message_text(
+            error_message,
+            chat_id=chat_id,
+            message_id=placeholder_message.message_id,
+            parse_mode="MarkdownV2"
+        )
         logging.error("Exception in handle_photo for chat '%s': %s", chat_id, ex)
 
+# 2. New helper to process and clean business info text.
+def process_business_info(info_text, chat_id):
+    # ساده‌سازی متن ورودی؛ حذف فاصله‌های اضافی.
+    return info_text.strip()
+
+def summarize_business_info(raw_text: str) -> str:
+    """
+    Summarize the provided business info in Persian, focusing on:
+      - Main business domain & goals
+      - Team members, roles, skills, responsibilities
+      - Key features & analysis
+    Limit output to ~200 words.
+    """
+    try:
+        summary_prompt = (
+            "لطفاً اطلاعات کسب‌وکار زیر را خلاصه و سازمان‌دهی کن. "
+            "اطلاعات اصلی در مورد حوزه کاری، اهداف، تیم، نقش‌ها، توانایی‌ها و جوانب کلیدی را استخراج کن و آن را "
+            "در حدود ۲۰۰ واژه در زبان فارسی توضیح بده:\n\n"
+            f"{raw_text}"
+        )
+        response = llm_business([HumanMessage(content=summary_prompt)])
+        return response.content.strip()
+    except Exception as e:
+        logging.error("Error summarizing business info: %s", e)
+        return raw_text
+
+# 3. Refined Business Info Update in text handler.
 @bot.message_handler(func=lambda message: message.text is not None and not message.text.startswith("/"))
 def handle_message(message):
-    """
-    Process non-command text messages.
-    In group chats, respond only if the bot is mentioned or the keyword "بلو" is present.
-    """
     chat_type = message.chat.type
     chat_id = str(message.chat.id)
+    # NEW: Check if the user is updating AI tone
+    if ai_tone_update_pending.get(chat_id):
+        new_tone = message.text.strip()
+        ai_tone_map[chat_id] = new_tone
+        ai_tone_update_pending.pop(chat_id, None)
+        bot.send_message(chat_id, f"✅ لحن هوش مصنوعی به '{new_tone}' تغییر یافت.")
+        return
+    if business_info_update_pending.get(chat_id):
+        new_info = process_business_info(message.text, chat_id)
+        mode = business_info_mode.get(chat_id, "replace")
+        if mode == "append":
+            current_info = get_user_business_info(chat_id)
+            combined_text = current_info + "\n" + new_info
+            optimized = summarize_business_info(combined_text)
+        else:
+            optimized = summarize_business_info(new_info)
+        
+        # Save to permanent storage
+        save_user_business_info(chat_id, optimized)
+        business_info_update_pending.pop(chat_id, None)
+        business_info_mode.pop(chat_id, None)
+        bot.send_message(chat_id, "✅ اطلاعات بیزینس به‌روزرسانی شد.")
+        bot.send_message(chat_id, f"🔍 اطلاعات بیزینس نهایی:\n{optimized}")
+        return
     user_message_text = message.text
+    sender_first_name = message.from_user.first_name or message.from_user.username
     sender_first_name = message.from_user.first_name or message.from_user.username
     logging.info("Received text message in chat '%s' from user '%s'.", chat_id, sender_first_name)
     
-    if message.reply_to_message:
-        replied_text = message.reply_to_message.text or ""
-        modified_user_message = (
-            f"*در پاسخ به:*\n{replied_text}\n\n"
-            f"*اسم کاربر:* `{sender_first_name}`\n{user_message_text}"
-        )
-    else:
-        modified_user_message = f"*اسم کاربر:* `{sender_first_name}`\n{user_message_text}"
-
-    save_message_to_history(chat_id, "user", modified_user_message)
+    save_message_to_history(chat_id, "user", f"{sender_first_name}: {user_message_text}")
     
-    bot_username = bot.get_me().username
-    is_mentioned = (
-        (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id) or
-        (user_message_text and (bot_username in user_message_text)) or
-        (message.entities and any(
-            entity.type == 'mention' and user_message_text[entity.offset:entity.offset + entity.length].lower() == f"@{bot_username.lower()}"
-            for entity in message.entities
-        )) or ("بلو" in user_message_text)
-    )
-    if chat_type in ['group', 'supergroup'] and not is_mentioned:
-        logging.info("Message in group '%s' ignored (bot not mentioned).", chat_id)
-        return
+    if chat_type in ['group', 'supergroup']:
+        bot_username = bot.get_me().username
+        is_mentioned = (
+            (message.reply_to_message and message.reply_to_message.from_user.id == bot.get_me().id) or
+            (user_message_text and (bot_username in user_message_text)) or
+            (message.entities and any(
+                entity.type == 'mention' and user_message_text[entity.offset:entity.offset + entity.length].lower() == f"@{bot_username.lower()}"
+                for entity in message.entities
+            )) or ("بلو" in user_message_text)
+        )
+        if not is_mentioned:
+            logging.info("Message in group '%s' stored but not triggering a response (bot not mentioned).", chat_id)
+            return
 
     bot.send_chat_action(chat_id, 'typing')
-    placeholder_message = bot.reply_to(message, "🤔 *در حال پردازش...*", parse_mode="Markdown")
+    placeholder_message = bot.reply_to(
+        message,
+        escape_markdown_v2("🤔 در حال فکر کردن..."),
+        parse_mode="MarkdownV2"
+    )
     
     try:
         ai_tone = ai_tone_map.get(chat_id, "دوستانه")
-        business_info = business_info_map.get(chat_id, "")
+        business_info = get_user_business_info(chat_id)  # Get from MongoDB instead of map
         history = get_history_for_chat(chat_id)
         log_data = {
             "Chat ID": chat_id,
@@ -653,7 +954,10 @@ def handle_message(message):
         logging.info("Invoking LangChain chain for text message in chat '%s'.\nPrompt details:\n%s",
                      chat_id, json.dumps(log_data, indent=4, ensure_ascii=False))
         
-        prompt_input = modified_user_message
+        prompt_input = f"{sender_first_name}: {user_message_text}"
+        if chat_id in LAST_IMAGE_ANALYSIS:
+            prompt_input += f"\n\n[remember you analyze this image and extracted this info , first analyze user request and then use related part from this Image Analysis , dont write un related to user query information in response  ]: {LAST_IMAGE_ANALYSIS[chat_id]}"
+            LAST_IMAGE_ANALYSIS.pop(chat_id, None)
         full_prompt = prompt.format(input=prompt_input, ai_tone=ai_tone, business_info=business_info, history=history.messages)
         logging.info("Full prompt sent to AI:\n%s", full_prompt)
         
@@ -662,34 +966,58 @@ def handle_message(message):
             config={"configurable": {"session_id": chat_id}}
         )
         logging.info("LangChain chain returned response for chat '%s'.", chat_id)
-        save_message_to_history(chat_id, "assistant", ai_response.content)
+        refined_response = refine_ai_response(ai_response.content)
+        save_message_to_history(chat_id, "assistant", refined_response)
         logging.info("Chat session '%s' now has %d messages in history.",
                      get_history_for_chat(chat_id).session_id,
                      len(get_history_for_chat(chat_id).messages))
         
-        bot.edit_message_text(ai_response.content, chat_id=chat_id,
+        bot.edit_message_text(refined_response, chat_id=chat_id,
                               message_id=placeholder_message.message_id,
-                              parse_mode="Markdown")
+                              parse_mode="MarkdownV2")
     except Exception as e:
-        error_message = (
-            "❌ *متأسفم، مشکلی در پردازش درخواست شما پیش آمد. لطفاً دوباره تلاش کنید.*\n\n"
-            f"*Error:* `{str(e)}`"
+        error_message = escape_markdown_v2(
+            "❌ متأسفم، مشکلی در پردازش درخواست شما پیش آمد. لطفاً دوباره تلاش کنید."
         )
-        bot.edit_message_text(error_message, chat_id=chat_id,
-                              message_id=placeholder_message.message_id,
-                              parse_mode="Markdown")
+        bot.edit_message_text(
+            error_message,
+            chat_id=chat_id,
+            message_id=placeholder_message.message_id,
+            parse_mode="MarkdownV2"
+        )
         logging.error("Error invoking LangChain chain for text message in chat '%s': %s", chat_id, e)
+
+# 4. Refined Business Info Update in document handler.
+@bot.message_handler(content_types=["document"])
+def handle_document(message):
+    chat_id = str(message.chat.id)
+    if business_info_update_pending.get(chat_id):
+        file_info = bot.get_file(message.document.file_id)
+        file_bytes = bot.download_file(file_info.file_path)
+        new_info = process_business_info(file_bytes.decode('utf-8'), chat_id)
+        mode = business_info_mode.get(chat_id, "replace")
+        if mode == "append":
+            current_info = get_user_business_info(chat_id)
+            optimized = current_info + "\n" + new_info
+        else:
+            optimized = new_info
+        
+        # Save to permanent storage
+        save_user_business_info(chat_id, optimized)
+        business_info_update_pending.pop(chat_id, None)
+        business_info_mode.pop(chat_id, None)
+        bot.send_message(chat_id, "✅ اطلاعات بیزینس به‌روزرسانی شد.")
+        bot.send_message(chat_id, f"🔍 اطلاعات بیزینس نهایی:\n{optimized}")
+    else:
+        bot.reply_to(message, "دستور به‌روزرسانی اطلاعات بیزینس فعال نیست.")
 
 # ============================================
 # Main Function to Run the Bot
 # ============================================
 def main():
-    """
-    Set up bot commands and start polling for incoming messages.
-    """
     logging.info("Setting up bot commands...")
     setup_bot_commands()
-    logging.info("Telegram Bot is now running. Chat sessions are managed via LangChain's MongoDB memory.")
+    logging.info("Telegram Bot is now running. Group conversations are logged and used as context.")
     bot.polling(none_stop=True)
 
 if __name__ == "__main__":

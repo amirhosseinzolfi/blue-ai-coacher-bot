@@ -1,0 +1,8 @@
+{
+  "prompt_template_text": "Your instruction prompt text here.",
+  "summary_prompt": "Your business summarize prompt text here.",
+  "daily_task_prompt": "Your daily task prompt text here.",
+  "daily_report_prompt": "Your daily report prompt text here.",
+  "insta_idea_prompt": "Your Instagram story idea prompt text here.",
+  "image_analyzer_prompt": "Your image analyzer prompt text here."
+}
