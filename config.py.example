@@ -1,0 +1,29 @@
+"""
+Configuration file template for Blue AI Coacher Bot.
+Copy this file to config.py and fill in your actual API keys and tokens.
+"""
+
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN = "your_telegram_bot_token_here"
+
+# AI Service API Keys
+OPENAI_API_KEY = "your_openai_api_key_here"  # Optional, G4F can be used instead
+GOOGLE_API_KEY = "your_google_api_key_here"  # For Gemini models
+
+# G4F API Configuration
+G4F_API_BASE_URL = "http://localhost:15501/v1"
+LLM_BASE_URL = "http://141.98.210.149:15403/v1"
+
+# Database Configuration
+DATABASE_PATH = "blue_bot.db"
+CHECKPOINTS_DB_PATH = "checkpoints.sqlite"
+
+# Business Information Update Tracking
+business_info_update_pending = {}
+
+# Bot Configuration
+DEFAULT_AI_TONE = "friendly"  # Options: friendly, professional, creative
+DEFAULT_LANGUAGE = "persian"
+
+# Logging Configuration
+LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR

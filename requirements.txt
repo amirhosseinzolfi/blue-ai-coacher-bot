@@ -1,0 +1,17 @@
+pyTelegramBotAPI
+requests
+g4f
+langchain
+langchain-openai
+langgraph
+aiohttp
+rich
+schedule
+python-dotenv
+SQLAlchemy
+pymongo
+telebot
+PyPDF2
+python-telegram-bot
+uvicorn
+python-dateutil

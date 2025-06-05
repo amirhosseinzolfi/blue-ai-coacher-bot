@@ -1,0 +1,4 @@
+*.sqlite filter=lfs diff=lfs merge=lfs -text
+*.sqlite-wal filter=lfs diff=lfs merge=lfs -text
+sqlite.db filter=lfs diff=lfs merge=lfs -text
+chroma_db/chroma.sqlite3 filter=lfs diff=lfs merge=lfs -text

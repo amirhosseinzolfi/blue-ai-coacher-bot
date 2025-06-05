@@ -1,0 +1,9 @@
+# Ignore virtual environment folders
+venv/
+env/
+__pycache__/
+*.pyc
+checkpoints.sqlite
+checkpoints.sqlite-wal
+checkpoints.sqlite
+checkpoints.sqlite-wal
