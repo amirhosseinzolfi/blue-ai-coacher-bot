@@ -27,6 +27,9 @@ config.py
 *.swp
 *.swo
 
+# History files (VS Code extension)
+.history/
+
 # Logs
 *.log
 logs/
@@ -47,3 +50,18 @@ temp/
 
 # Task data
 database/users_task.json
+
+# Git directories (in case of nested repos)
+*.git/
+
+# HAR and cookie files with sensitive data
+har_and_cookies/
+*.har
+*_cookies.json
+
+# Chrome database files
+chroma_db/
+
+# Service files
+*.service
+blue_business_bot
