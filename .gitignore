@@ -68,3 +68,6 @@ blue_business_bot
 
 # Jira MCP local overrides
 mcp-atlassian.env.local
+
+# Binary packages
+*.deb
