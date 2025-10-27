@@ -24,10 +24,10 @@ except Exception:
     USE_RICH = False
 
 # ---------- Jira Config ----------
-JIRA_SERVER = "https://blufyorg.atlassian.net"
-JIRA_EMAIL = "bluefy.org@gmail.com"
+JIRA_SERVER = os.getenv("JIRA_URL", "https://blufyorg.atlassian.net")
+JIRA_EMAIL = os.getenv("JIRA_USERNAME", "bluefy.org@gmail.com")
 JIRA_USER_ID = "63f9be4d40328c12e4edde22"
-JIRA_API_TOKEN = "***REMOVED***"
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 
 # ---------- Jira Connection ----------
 options = {'server': JIRA_SERVER}
