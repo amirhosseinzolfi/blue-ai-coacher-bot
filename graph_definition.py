@@ -57,6 +57,7 @@ logger = setup_logger(level=logging.INFO, logger_name="graph_definition")
 # when this graph is compiled and run.
 # If direct import is preferred:
 from langgraph_code import llm, llm_summary, PRIMARY_LLM_MODEL, image_analyze_llm
+from langgraph.prebuilt import create_react_agent
 
 
 ############################################
@@ -73,7 +74,7 @@ class AgentState(TypedDict):
 # Node Definitions
 ############################################
 
-def call_llm_node(state: AgentState) -> AgentState:
+def call_llm_node(state: AgentState, tools=None) -> AgentState:
     """
     Calls the primary LLM to generate a response.
     """
@@ -170,6 +171,19 @@ def call_llm_node(state: AgentState) -> AgentState:
     else:
         logger.info("Processing non-human last message or empty messages.")
 
+    # Add Jira context if enabled
+    jira_context = ""
+    try:
+        from config import JIRA_ENABLED
+        if JIRA_ENABLED:
+            from utils.jira_integration import get_jira_context_for_chat
+            jira_context = get_jira_context_for_chat(chat_id)
+            if jira_context:
+                logger.info(f"Added Jira context for chat {chat_id}")
+    except Exception as e:
+        logger.error(f"Error fetching Jira context: {e}")
+        jira_context = ""
+
     # System Prompt Construction with Summary Integration
     formatted_system_prompt = PROMPT_TEMPLATE_TEXT.format(
         business_info=business_info,
@@ -183,8 +197,12 @@ def call_llm_node(state: AgentState) -> AgentState:
     system_instruction_content += (
         f"\n\nCURRENT DATE: {current_shamsi_date}" +
         "\n\nINPUT FORMAT: User messages are formatted with clear sections (, 👤 user :, 💬 MESSAGE:, ↩️ REPLYING TO:). " +
-        "Parse these sections carefully to understand the user's request and context."
+        "aware of those  sections carefully to understand the user's name , request and context."
     )
+    
+    # Add Jira context if available
+    if jira_context:
+        system_instruction_content += jira_context
     
     # Add conversation summary to system instruction if available - moved to end for better context
     if conversation_summary:
@@ -204,86 +222,104 @@ def call_llm_node(state: AgentState) -> AgentState:
     final_user_prompt_content = current_messages[-1].content if current_messages else ""
 
     logger.info(f"📨 call_llm_node: invoking LLM with {len(messages_for_llm)} messages (system + conversation).")
-    try:
-        start_time = time.time()
-        
-        # Direct non-streaming LLM call
-        response = llm.invoke(messages_for_llm)
-        
-        duration = time.time() - start_time
-        ai_response_content = response.content
-        ai_message = AIMessage(content=ai_response_content)
+    
+    # If tools are provided, use a ReAct agent
+    if tools:
+        try:
+            agent = create_react_agent(
+                llm,
+                tools,
+                prompt=system_instruction_content,
+                version="v2"
+            )
+            # Run the agent with the current messages
+            result = agent.invoke({"messages": current_messages})
+            ai_message = result["messages"][-1]
+        except Exception as e:
+            logger.error(f"Error running ReAct agent with tools: {e}", exc_info=True)
+            # Fallback to plain LLM below
+            ai_message = None
+    else:
+        try:
+            start_time = time.time()
+            
+            # Direct non-streaming LLM call
+            response = llm.invoke(messages_for_llm)
+            
+            duration = time.time() - start_time
+            ai_response_content = response.content
+            ai_message = AIMessage(content=ai_response_content)
 
-    except Exception as e:
-        logger.error(f"[bold red]❌ Error during LLM call in call_llm_node: {e}[/bold red]", exc_info=True)
-        
-        # Check if this was a multimodal input - if so, try the specialized image analyzer
-        if is_multimodal and image_urls: # Ensure is_multimodal is defined and True
-            try:
-                logger.info("🖼️ Attempting fallback with specialized image analyzer LLM...")
-                
-                # Create a comprehensive prompt for the image analyzer using centralized prompts
-                image_analyzer_system_prompt = IMAGE_ANALYZER_SYSTEM_PROMPT.format(
-                    IMAGE_ANALYZER_PROMPT=IMAGE_ANALYZER_PROMPT,
-                    business_info=business_info
-                )
-                
-                # Send the multimodal content to the image analyzer
-                # Ensure multimodal_content is defined
-                if multimodal_content is None and last_message and isinstance(last_message.content, list):
-                    multimodal_content = last_message.content
+        except Exception as e:
+            logger.error(f"[bold red]❌ Error during LLM call in call_llm_node: {e}[/bold red]", exc_info=True)
+            
+            # Check if this was a multimodal input - if so, try the specialized image analyzer
+            if is_multimodal and image_urls: # Ensure is_multimodal is defined and True
+                try:
+                    logger.info("🖼️ Attempting fallback with specialized image analyzer LLM...")
+                    
+                    # Create a comprehensive prompt for the image analyzer using centralized prompts
+                    image_analyzer_system_prompt = IMAGE_ANALYZER_SYSTEM_PROMPT.format(
+                        IMAGE_ANALYZER_PROMPT=IMAGE_ANALYZER_PROMPT,
+                        business_info=business_info
+                    )
+                    
+                    # Send the multimodal content to the image analyzer
+                    # Ensure multimodal_content is defined
+                    if multimodal_content is None and last_message and isinstance(last_message.content, list):
+                        multimodal_content = last_message.content
 
-                image_analysis_messages = [
-                    SystemMessage(content=image_analyzer_system_prompt),
-                    HumanMessage(content=multimodal_content) # Use the captured multimodal_content
-                ]
-                
-                logger.info(f"Sending multimodal content to image analyzer: text='{text_content[:50]}...' images={len(image_urls)}")
-                # Use the imported image_analyze_llm instance
-                image_analyzer_response = image_analyze_llm.invoke(image_analysis_messages)
-                image_analysis_text = image_analyzer_response.content
-                logger.info(f"✅ Image analyzer provided comprehensive analysis: {image_analysis_text[:100]}...")
-                
-                # Now create a text-only message to send to the main LLM with the analysis
-                comprehensive_text_message = IMAGE_ANALYSIS_FALLBACK_PROMPT.format(
-                    text_content=text_content,
-                    image_analysis_text=image_analysis_text
-                )
-                
-                # Replace multimodal message with comprehensive text message
-                text_only_human_message = HumanMessage(content=comprehensive_text_message)
-                current_messages[-1] = text_only_human_message
-                
-                # Create new messages list with the updated content
-                messages_for_llm = [system_message] + current_messages
-                
-                # Try main LLM again with the comprehensive analysis
-                logger.info("🔄 Retrying main LLM with comprehensive image analysis...")
-                retry_response = llm.invoke(messages_for_llm)
-                ai_response_content = retry_response.content
-                ai_message = AIMessage(content=ai_response_content)
-                logger.info(f"✅ Main LLM responded successfully after image analysis fallback: {ai_response_content[:100]}...")
-                
-            except Exception as fallback_error:
-                logger.error(f"❌ Image analyzer fallback also failed: {fallback_error}", exc_info=True)
-                
-                # If even the image analyzer fails, provide a helpful error message using centralized prompt
-                error_message_content = IMAGE_ANALYSIS_ERROR_MESSAGE.format(
-                    text_content=text_content,
-                    image_count=len(image_urls)
-                )
-                
+                    image_analysis_messages = [
+                        SystemMessage(content=image_analyzer_system_prompt),
+                        HumanMessage(content=multimodal_content) # Use the captured multimodal_content
+                    ]
+                    
+                    logger.info(f"Sending multimodal content to image analyzer: text='{text_content[:50]}...' images={len(image_urls)}")
+                    # Use the imported image_analyze_llm instance
+                    image_analyzer_response = image_analyze_llm.invoke(image_analysis_messages)
+                    image_analysis_text = image_analyzer_response.content
+                    logger.info(f"✅ Image analyzer provided comprehensive analysis: {image_analysis_text[:100]}...")
+                    
+                    # Now create a text-only message to send to the main LLM with the analysis
+                    comprehensive_text_message = IMAGE_ANALYSIS_FALLBACK_PROMPT.format(
+                        text_content=text_content,
+                        image_analysis_text=image_analysis_text
+                    )
+                    
+                    # Replace multimodal message with comprehensive text message
+                    text_only_human_message = HumanMessage(content=comprehensive_text_message)
+                    current_messages[-1] = text_only_human_message
+                    
+                    # Create new messages list with the updated content
+                    messages_for_llm = [system_message] + current_messages
+                    
+                    # Try main LLM again with the comprehensive analysis
+                    logger.info("🔄 Retrying main LLM with comprehensive image analysis...")
+                    retry_response = llm.invoke(messages_for_llm)
+                    ai_response_content = retry_response.content
+                    ai_message = AIMessage(content=ai_response_content)
+                    logger.info(f"✅ Main LLM responded successfully after image analysis fallback: {ai_response_content[:100]}...")
+                    
+                except Exception as fallback_error:
+                    logger.error(f"❌ Image analyzer fallback also failed: {fallback_error}", exc_info=True)
+                    
+                    # If even the image analyzer fails, provide a helpful error message using centralized prompt
+                    error_message_content = IMAGE_ANALYSIS_ERROR_MESSAGE.format(
+                        text_content=text_content,
+                        image_count=len(image_urls)
+                    )
+                    
+                    error_ai_message = AIMessage(content=error_message_content)
+                    logger.process_end("call_llm_node processing failed with both primary and image analyzer fallback methods")
+                    updated_messages = current_messages + [error_ai_message]
+                    return {**state, "messages": updated_messages}
+            else:
+                # If not multimodal or no fallback available, return error message
+                error_message_content = "متأسفم، مشکلی در پردازش درخواست شما پیش آمد. لطفاً دوباره تلاش کنید."
                 error_ai_message = AIMessage(content=error_message_content)
-                logger.process_end("call_llm_node processing failed with both primary and image analyzer fallback methods")
+                logger.process_end("call_llm_node processing failed with error")
                 updated_messages = current_messages + [error_ai_message]
                 return {**state, "messages": updated_messages}
-        else:
-            # If not multimodal or no fallback available, return error message
-            error_message_content = "متأسفم، مشکلی در پردازش درخواست شما پیش آمد. لطفاً دوباره تلاش کنید."
-            error_ai_message = AIMessage(content=error_message_content)
-            logger.process_end("call_llm_node processing failed with error")
-            updated_messages = current_messages + [error_ai_message]
-            return {**state, "messages": updated_messages}
 
     # enriched interaction log
     # Pass current_messages (actual conversation turns) as history for logging

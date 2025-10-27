@@ -4,17 +4,24 @@ from g4f.client import Client
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.tools import Tool
 from langchain_openai import ChatOpenAI
-from prompts.prompts import IMAGE_OPTIMIZATION_SYSTEM_PROMPT
+from langchain_google_genai import ChatGoogleGenerativeAI
 
+from prompts.prompts import IMAGE_OPTIMIZATION_SYSTEM_PROMPT
+from config import (
+    TELEGRAM_BOT_TOKEN,
+    GOOGLE_API_KEY,
+    OPENAI_API_KEY,
+    ai_tone_map,
+    DATABASE_NAME
+)
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 
 # Define a single LLM for prompt optimization
-llm = ChatOpenAI(
-    base_url="http://141.98.210.149:15203/v1",
-    model_name="gpt-4o",
-    api_key="324",
-    temperature=0.7
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    temperature=0.5,
+    api_key=GOOGLE_API_KEY
 )
 logging.info("Image Agent LLM initialized.")
 

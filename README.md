@@ -71,7 +71,7 @@
         *   `TELEGRAM_BOT_TOKEN` - Your Telegram bot token from @BotFather
         *   `OPENAI_API_KEY` - Your OpenAI API key (optional, G4F can be used)
         *   `GOOGLE_API_KEY` - Your Google AI Studio API key for Gemini models
-    *   The G4F API server is configured to run on `http://localhost:15501/v1`. Adjust if needed.
+    *   Duplicate `mcp-atlassian.env` to `mcp-atlassian.env.local`, populate Jira MCP credentials, and keep the `.local` file private.
 
 6.  **Initialize Database:**
     The bot uses SQLite and will create database files automatically on first run.

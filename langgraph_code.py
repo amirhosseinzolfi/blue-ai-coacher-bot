@@ -22,7 +22,7 @@ import json
 import re
 import threading
 from typing import List, Dict, Any, Optional, Union
-
+from langchain_google_genai import ChatGoogleGenerativeAI
 ############################################
 # Third-Party Imports
 ############################################
@@ -34,6 +34,7 @@ import requests
 from config import (
     TELEGRAM_BOT_TOKEN,
     GOOGLE_API_KEY,
+    GOOGLE_API_KEY_2,
     OPENAI_API_KEY,
     ai_tone_map,
     DATABASE_NAME
@@ -51,52 +52,48 @@ logger.info("Initializing LangChain integrations...")
 ############################################
 # LLM Model Definitions and Instance Setup
 ############################################
-PRIMARY_LLM_MODEL = "gemini-1.5-pro"
-BUSINESS_LLM_MODEL = "gemini-1.5-pro"
-SUMMARY_LLM_MODEL = "gemini-1.5-flash"
-USER_REPORT_LLM_MODEL = "gpt-4o"
+PRIMARY_LLM_MODEL = "gemini-2.5-flash"
+BUSINESS_LLM_MODEL = "gemini-2.5-flash"
+SUMMARY_LLM_MODEL = "gemini-2.5-flash"
+USER_REPORT_LLM_MODEL = "gemini-2.5-flash"
 
 
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI(
-    base_url="http://141.98.210.149:15403/v1",
-    model_name=PRIMARY_LLM_MODEL,
+
+llm = ChatGoogleGenerativeAI(
+    model=PRIMARY_LLM_MODEL,
     temperature=0.5,
-    api_key=OPENAI_API_KEY
+    api_key=GOOGLE_API_KEY
 )
 logger.info(f"Primary LangChain LLM initialized with model: {PRIMARY_LLM_MODEL}.")
 
-llm_business = ChatOpenAI(
-    base_url="http://141.98.210.149:15403/v1",
-    model_name=BUSINESS_LLM_MODEL,
+llm_business = ChatGoogleGenerativeAI(
+    model=BUSINESS_LLM_MODEL,
     temperature=0.5,
-    api_key=OPENAI_API_KEY
+    api_key=GOOGLE_API_KEY
 )
 logger.info(f"Secondary LangChain LLM for business info summarization initialized with model: {BUSINESS_LLM_MODEL}.")
 
-user_llm = ChatOpenAI(
-    base_url="http://141.98.210.149:15403/v1",
-    model_name=USER_REPORT_LLM_MODEL,
+user_llm = ChatGoogleGenerativeAI(
+    model=USER_REPORT_LLM_MODEL,
     temperature=0.5,
-    api_key=OPENAI_API_KEY
+    api_key=GOOGLE_API_KEY
 )
 logger.info(f"User LLM initialized with model: {USER_REPORT_LLM_MODEL}.")
 
-llm_summary = ChatOpenAI(
-    base_url="http://141.98.210.149:15403/v1",
-    model_name=SUMMARY_LLM_MODEL,
+llm_summary = ChatGoogleGenerativeAI(
+    model=SUMMARY_LLM_MODEL,
     temperature=0.5,
-    api_key=OPENAI_API_KEY
+    api_key=GOOGLE_API_KEY_2
 )
 logger.info(f"Summary LLM initialized with model: {SUMMARY_LLM_MODEL}.")
 
 # Add image analysis LLM - this is now also defined in graph_definition.py to avoid circular imports
-image_analyze_llm = ChatOpenAI(
-    base_url="http://141.98.210.149:15203/v1",
-    model_name="gpt-4o",
+image_analyze_llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
     temperature=0.5,
-    api_key="1"
+    api_key=GOOGLE_API_KEY
 )
 logger.info(f"Image analysis LLM initialized with model: gpt-4o.")
 
@@ -476,6 +473,3 @@ __all__ = [
     "AgentState",
     "image_analyze_llm"  # Add image_analyze_llm to exports
 ]
-
-
-

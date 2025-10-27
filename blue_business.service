@@ -1,30 +1,14 @@
 [Unit]
-Description=Blue Business Bot Service
-# Start after the network is available
+Description=Blue AI Business Coacher Bot
 After=network.target
 
 [Service]
-# NOTE: Running services as root is generally discouraged for security reasons.
-# Consider creating a dedicated user/group for this service.
+Type=simple
 User=root
-Group=root
-
-# Set the working directory to your project's root
 WorkingDirectory=/root/blue-ai-coacher-bot
-
-# Command to start the Python application using the virtual environment's Python interpreter
-# Replace 'bot.py' if your main application script has a different name
 ExecStart=/root/blue-ai-coacher-bot/.venv/bin/python /root/blue-ai-coacher-bot/bot.py
-
-# Restart the service if it crashes
 Restart=always
-# Wait 3 seconds before restarting
-RestartSec=3
-
-# Standard output and error logging (optional, adjust as needed)
-# StandardOutput=journal
-# StandardError=journal
+RestartSec=10
 
 [Install]
-# Enable the service for the default multi-user target
-# WantedBy=multi-user.target
+WantedBy=multi-user.target

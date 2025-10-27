@@ -103,18 +103,17 @@ def get_shamsi_month_name(date=None):
     ]
     
     return month_names[month_num - 1]
-
 def get_full_shamsi_date():
     """
-    Returns the current Shamsi date with month name.
+    Returns the current date in multiple formats: Shamsi, Gregorian, and Hijri.
     
     Returns:
-        str: Formatted date string like "۱۱ اردیبهشت ۱۴۰۳"
+        str: Formatted date string with all three calendar systems
     """
     now = datetime.datetime.now()
     shamsi_date = gregorian_to_shamsi(now)
     
-    # Extract components
+    # Extract Shamsi components
     for i, digit in enumerate("۰۱۲۳۴۵۶۷۸۹"):
         shamsi_date = shamsi_date.replace(digit, str(i))
     
@@ -123,5 +122,43 @@ def get_full_shamsi_date():
     day_persian = "".join(["۰۱۲۳۴۵۶۷۸۹"[int(d)] for d in day])
     
     month_name = get_shamsi_month_name(now)
+    shamsi_full = f"{day_persian} {month_name} {year_persian}"
     
-    return f"{day_persian} {month_name} {year_persian}"
+    # Gregorian date
+    gregorian_months = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ]
+    gregorian_full = f"{now.day} {gregorian_months[now.month - 1]} {now.year}"
+    
+    # Hijri date calculation (approximate)
+    # Basic Hijri conversion (Julian day based)
+    julian_day = int(now.toordinal() + 1948440.5)
+    hijri_year = int((julian_day - 1948440.5 - 227015) / 354.367)
+    remaining_days = julian_day - int(1948440.5 + 227015 + hijri_year * 354.367)
+    
+    # Hijri months (29/30 days alternating, with adjustments)
+    hijri_months = [
+        "محرم", "صفر", "ربیع الاول", "ربیع الثانی", "جمادی الاول", "جمادی الثانی",
+        "رجب", "شعبان", "رمضان", "شوال", "ذیقعده", "ذیحجه"
+    ]
+    
+    days_in_months = [30, 29, 30, 29, 30, 29, 30, 29, 30, 29, 30, 29]
+    hijri_month = 1
+    hijri_day = remaining_days
+    
+    for i, days in enumerate(days_in_months):
+        if hijri_day <= days:
+            hijri_month = i + 1
+            break
+        hijri_day -= days
+    
+    if hijri_day <= 0:
+        hijri_day = 1
+    
+    hijri_year += 1444  # Approximate base year adjustment
+    hijri_day_persian = "".join(["۰۱۲۳۴۵۶۷۸۹"[int(d)] for d in str(int(hijri_day))])
+    hijri_year_persian = "".join(["۰۱۲۳۴۵۶۷۸۹"[int(d)] for d in str(hijri_year)])
+    hijri_full = f"{hijri_day_persian} {hijri_months[hijri_month - 1]} {hijri_year_persian}"
+    
+    return f"شمسی: {shamsi_full} | میلادی: {gregorian_full} | قمری: {hijri_full}"

@@ -2,7 +2,13 @@ import logging
 from g4f.client import Client
 from langchain.agents import Tool, initialize_agent
 from langchain_openai import ChatOpenAI
-
+from config import (
+    TELEGRAM_BOT_TOKEN,
+    GOOGLE_API_KEY,
+    OPENAI_API_KEY,
+    ai_tone_map,
+    DATABASE_NAME
+)
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 
@@ -24,13 +30,14 @@ image_generation_tool = Tool(
     return_direct=True
 )
 
-# Step 3: Initialize the LangChain LLM
-llm = ChatOpenAI(
-    base_url="http://localhost:15203/v1",
-    model_name="gpt-4o",
-    api_key="324",
-    temperature=0.5
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    temperature=0.5,
+    api_key=GOOGLE_API_KEY
 )
+# Step 3: Initialize the LangChain LLM
+
 logging.info("Primary LangChain LLM initialized.")
 
 # Step 4: Initialize the agent with the tool

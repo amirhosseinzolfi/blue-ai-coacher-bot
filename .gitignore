@@ -65,3 +65,6 @@ chroma_db/
 # Service files
 *.service
 blue_business_bot
+
+# Jira MCP local overrides
+mcp-atlassian.env.local

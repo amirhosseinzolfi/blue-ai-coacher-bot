@@ -70,7 +70,8 @@ def setup_command_handlers(bot_instance, logger_instance):
         'options': options_handler,
         'new_chat': new_chat,
         'generate_image': generate_image_command,
-        'menu': send_menu  # Add new menu command
+        'menu': send_menu,  # Add new menu command
+        'sprint_analysis': handle_sprint_analysis  # Register sprint analysis handler
     }
 
 def get_main_menu_keyboard():
@@ -303,3 +304,31 @@ def send_menu(message):
     main_menu = get_main_menu_keyboard()
     bot.send_message(message.chat.id, "منوی اصلی:", reply_markup=main_menu)
     save_message_to_history(chat_id, "system", "منوی اصلی نمایش داده شد.")
+
+def handle_sprint_analysis(message):
+    """Handle sprint analysis request"""
+    try:
+        from jira_integration import get_sprint_context_for_llm, invalidate_sprint_cache
+        from prompts.prompts import SPRINT_ANALYSIS_PROMPT
+        
+        # Invalidate cache to get fresh data
+        invalidate_sprint_cache()
+        
+        # Get business info and sprint context
+        business_info = get_user_business_info(str(message.chat.id))
+        sprint_context = get_sprint_context_for_llm()
+        
+        # Create analysis prompt
+        analysis_prompt = SPRINT_ANALYSIS_PROMPT.format(
+            active_sprint_tasks=sprint_context,
+            business_info=business_info
+        )
+        
+        # Send to LLM for analysis
+        response = run_agent(analysis_prompt, str(message.chat.id), message.message_id, message.from_user.first_name)
+        
+        bot.reply_to(message, escape_markdown_v2(response), parse_mode="MarkdownV2")
+        
+    except Exception as e:
+        logger.error(f"Error in sprint analysis: {e}")
+        bot.reply_to(message, "❌ خطا در تحلیل اسپرینت. لطفا دوباره تلاش کنید.")

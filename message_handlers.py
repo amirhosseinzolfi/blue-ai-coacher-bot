@@ -231,6 +231,9 @@ Please respond to this message appropriately."""
     placeholder_message = bot.reply_to(message, escape_markdown_v2("🤔 در حال فکر کردن..."), parse_mode="MarkdownV2")
     
     try:
+        # run_agent is a synchronous function that returns the refined response string.
+        # Calling asyncio.run(...) on its return value would pass a plain string to the
+        # event loop and trigger "a coroutine was expected, got <str>" errors.
         refined_response = run_agent(query_payload, chat_id, placeholder_message.message_id, sender_first_name)
         bot.edit_message_text(refined_response, chat_id=chat_id,
                               message_id=placeholder_message.message_id,

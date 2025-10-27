@@ -17,6 +17,15 @@ except ImportError:
     print("[ERROR] g4f.api module not found. Install the 'g4f' package.")
     run_api = None
 
+# Add imports for JIRA integration
+try:
+    from jira_api import get_tasks_in_active_sprint
+    JIRA_AVAILABLE = True
+    print("JIRA API integration enabled for task agent")
+except ImportError as e:
+    JIRA_AVAILABLE = False
+    print(f"[WARNING] JIRA API not available for task agent: {e}")
+
 # --- G4F API Server Setup ---
 def start_interference_api():
     print("[INFO] Starting G4F Interference API server on http://localhost:16201/v1 ...")
@@ -59,8 +68,6 @@ else:
     print("[WARNING] G4F API server not started due to missing module.")
 
 # --- Update LLM configuration to use new API endpoint ---
-
-# ...existing code continues...
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from pydantic import BaseModel, Field
@@ -132,13 +139,6 @@ def load_tasks() -> List[Task]:
                 return []
             valid_tasks = []
             for i, task_data in enumerate(tasks_data):
-                if isinstance(task_data, dict) and 'id' in task_data and 'description' in task_data:
-                    if 'status' not in task_data:
-                        task_data['status'] = 'todo'
-                    valid_tasks.append(Task(**task_data))
-                else:
-                    print(f"Warning: Skipping invalid task data at index {i} in '{TASKS_FILE}'.")
-            return valid_tasks
     except json.JSONDecodeError:
         print(f"Warning: Could not parse JSON from '{TASKS_FILE}'. Starting with empty task list.")
         return []
