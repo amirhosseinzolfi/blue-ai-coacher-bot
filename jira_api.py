@@ -24,10 +24,14 @@ except Exception:
     USE_RICH = False
 
 # ---------- Jira Config ----------
-JIRA_SERVER = os.getenv("JIRA_URL", "https://blufyorg.atlassian.net")
-JIRA_EMAIL = os.getenv("JIRA_USERNAME", "bluefy.org@gmail.com")
-JIRA_USER_ID = "63f9be4d40328c12e4edde22"
-JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
+JIRA_SERVER = os.getenv("JIRA_SERVER", "https://blufyorg.atlassian.net")
+JIRA_EMAIL = os.getenv("JIRA_EMAIL", "bluefy.org@gmail.com")
+JIRA_USER_ID = os.getenv("JIRA_USER_ID", "")
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN", "")
+
+if not JIRA_API_TOKEN or not JIRA_USER_ID:
+    logging.error("JIRA_API_TOKEN and JIRA_USER_ID environment variables are required")
+    sys.exit(1)"
 
 # ---------- Jira Connection ----------
 options = {'server': JIRA_SERVER}

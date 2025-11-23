@@ -21,6 +21,10 @@
 *   **Team Engagement:**
     *   Daily coaching tips and productivity guides.
     *   Leaderboard generation based on user activity and efficiency.
+*   **Jira Integration (MCP):**
+    *   Real-time access to Jira tasks, sprints, and issues.
+    *   Automatic detection of Jira-related queries.
+    *   Task management and sprint tracking through natural language.
 *   **Customizable Interaction:**
     *   Adjustable AI tone (Friendly, Professional, Creative).
     *   Interaction via direct commands, mentions (`بلو` or `@Blue`), or inline/menu buttons.
@@ -32,11 +36,12 @@
 *   **Python 3.x**
 *   **Telegram Bot API:** via `pyTelegramBotAPI` library for Telegram integration.
 *   **LangChain & LangGraph:** For building sophisticated LLM-powered applications and agentic workflows.
-*   **OpenAI & Gemini Models:** Leverages models like GPT-4o and Gemini-1.5-Flash via G4F and direct API calls for AI responses.
+*   **OpenAI & Gemini Models:** Leverages models like GPT-4o and Gemini-2.5-Flash via G4F and direct API calls for AI responses.
 *   **G4F (GPT4Free):** Provides access to various LLM models.
 *   **SQLite:** For database management (chat history, business info, user reports, LangGraph checkpoints).
 *   **Rich:** For enhanced terminal logging and display.
 *   **Schedule:** For daily automated tasks like resets.
+*   **MCP (Model Context Protocol):** For Jira integration via LangChain adapters.
 
 ## ⚙️ Setup and Installation
 
@@ -71,7 +76,12 @@
         *   `TELEGRAM_BOT_TOKEN` - Your Telegram bot token from @BotFather
         *   `OPENAI_API_KEY` - Your OpenAI API key (optional, G4F can be used)
         *   `GOOGLE_API_KEY` - Your Google AI Studio API key for Gemini models
-    *   Duplicate `mcp-atlassian.env` to `mcp-atlassian.env.local`, populate Jira MCP credentials, and keep the `.local` file private.
+        *   `JIRA_ENABLED` - Set to `true` to enable Jira integration (default: true)
+        *   `JIRA_MCP_URL` - Jira MCP server URL (default: http://localhost:9000/mcp)
+        *   `JIRA_DEFAULT_PROJECT` - Default Jira project key (default: BAP)
+    *   For Jira integration:
+        *   Ensure Jira MCP server is running on the configured URL
+        *   Duplicate `mcp-atlassian.env` to `mcp-atlassian.env.local`, populate Jira MCP credentials, and keep the `.local` file private.
 
 6.  **Initialize Database:**
     The bot uses SQLite and will create database files automatically on first run.
@@ -92,14 +102,18 @@
 ├── command_handlers.py        # Handles Telegram command inputs (e.g., /start, /settings)
 ├── callback_handlers.py       # Handles inline button callback queries
 ├── message_handlers.py        # Handles regular text, photo, and document messages
+├── jira_integration.py        # Jira MCP integration and tool management
+├── jira_agent.py              # Jira ReAct agent for task queries
 ├── config.py.example          # Example configuration file (copy to config.py)
 ├── daily_reset.py             # Handles daily reset tasks
 ├── db_manager.py              # SQLite database interaction logic
 ├── prompts/
-│   └── prompts.py             # Contains all LLM prompt templates
+│   └── prompts.py             # Contains all LLM prompt templates (including Jira prompts)
 ├── utils/
 │   ├── helpers.py             # Utility functions (e.g., Markdown escaping)
-│   └── rich_logger.py         # Custom logging setup using Rich
+│   ├── rich_logger.py         # Custom logging setup using Rich
+│   ├── date_helpers.py        # Date utility functions
+│   └── persian_date.py        # Persian date conversion utilities
 ├── requirements.txt           # Python package dependencies
 ├── .gitignore                 # Git ignore rules
 └── README.md                  # This file
@@ -121,11 +135,22 @@ Interact with Blue (بلو) in a Telegram group or direct chat:
 *   **Inline Buttons:** Many commands and options present inline buttons for quick actions.
 *   **Menu Buttons:** Predefined menu buttons for common actions like "➕ افزودن تسک" (Add Task), "📊 گزارش امروز" (Today's Report).
 
+### Jira Integration Usage
+
+When Jira integration is enabled, you can ask questions like:
+- "تسکهای من در جیرا چیه؟" (What are my tasks in Jira?)
+- "اسپرینت فعلی چه وضعیتی داره؟" (What's the current sprint status?)
+- "show me BAP-123 issue details"
+- "لیست مسائل باز" (List open issues)
+
+The bot automatically detects Jira-related queries and uses MCP tools to fetch real-time data.
+
 ## 🔒 Security Notes
 
 *   Never commit your `config.py` file with real API keys to version control.
 *   Use environment variables in production environments.
 *   The `.gitignore` file is configured to exclude sensitive files.
+*   Keep `mcp-atlassian.env.local` private and never commit it.
 
 ## 🤝 Contributing
 
