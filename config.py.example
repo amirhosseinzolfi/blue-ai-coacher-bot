@@ -9,6 +9,7 @@ TELEGRAM_BOT_TOKEN = "your_telegram_bot_token_here"
 # AI Service API Keys
 OPENAI_API_KEY = "your_openai_api_key_here"  # Optional, G4F can be used instead
 GOOGLE_API_KEY = "your_google_api_key_here"  # For Gemini models
+GOOGLE_API_KEY_2 = "your_google_api_key_2_here"  # Secondary key for summary LLM
 
 # G4F API Configuration
 G4F_API_BASE_URL = "http://localhost:15501/v1"

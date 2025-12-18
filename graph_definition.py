@@ -53,10 +53,8 @@ logger = setup_logger(level=logging.INFO, logger_name="graph_definition")
 # If langgraph_code.py imports this module, it needs to ensure LLMs are set before graph use.
 # A cleaner way would be to pass LLM instances to nodes if they become classes, or use a config object.
 
-# For simplicity, let's assume llm and llm_summary are available from langgraph_code's scope
-# when this graph is compiled and run.
-# If direct import is preferred:
-from langgraph_code import llm, llm_summary, PRIMARY_LLM_MODEL, image_analyze_llm
+# Import LLM instances from centralized module
+from llm_initial import llm, llm_summary, PRIMARY_LLM_MODEL, image_analyze_llm
 from langgraph.prebuilt import create_react_agent
 
 
@@ -103,8 +101,12 @@ def call_llm_node(state: AgentState, tools=None) -> AgentState:
             # Fallback to JSON file for backward compatibility
             script_dir = os.path.dirname(os.path.abspath(__file__))
             db_path = os.path.join(script_dir, "database", "users_task.json")
-            with open(db_path, "r", encoding="utf-8") as f:
-                tasks_db = json.load(f)
+            
+            if os.path.exists(db_path):
+                with open(db_path, "r", encoding="utf-8") as f:
+                    tasks_db = json.load(f)
+            else:
+                tasks_db = {}
             
             today_tasks_for_chat = tasks_db.get(str(chat_id), {}).get(today, {})
             users_tasks_list = []

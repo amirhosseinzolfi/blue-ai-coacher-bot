@@ -12,7 +12,8 @@ from telebot.types import BotCommand, BotCommandScopeDefault, BotCommandScopeAll
 from utils.helpers import escape_markdown_v2
 from config import (
     TELEGRAM_BOT_TOKEN,
-    business_info_update_pending
+    business_info_update_pending,
+    JIRA_ENABLED
 )
 from db_manager import save_message_to_history
 from langgraph_code import (
@@ -62,7 +63,7 @@ def setup_command_handlers(bot_instance, logger_instance):
     bot = bot_instance
     logger = logger_instance
     setup_bot_commands()
-    return {
+    handlers = {
         'start': send_welcome,
         'help': send_help,
         'about': about_bot,
@@ -70,9 +71,15 @@ def setup_command_handlers(bot_instance, logger_instance):
         'options': options_handler,
         'new_chat': new_chat,
         'generate_image': generate_image_command,
-        'menu': send_menu,  # Add new menu command
-        'sprint_analysis': handle_sprint_analysis  # Register sprint analysis handler
+        'session_assistant': session_assistant_command,
+        'menu': send_menu,
+        'clear_data': clear_data_command
     }
+
+    if JIRA_ENABLED:
+        handlers['sprint_analysis'] = handle_sprint_analysis
+
+    return handlers
 
 def get_main_menu_keyboard():
     """
@@ -96,7 +103,9 @@ def setup_bot_commands():
         BotCommand("chat_report", "گزارش روزانه"),
         BotCommand("insta_idea", "ایده استوری اینستاگرام"),
         BotCommand("generate_image", "ساخت تصویر با هوش مصنوعی"),
+        BotCommand("session_assistant", "تحلیل جلسات با هوش مصنوعی"),
         BotCommand("new_chat", "ایجاد جلسه چت جدید"),
+        BotCommand("clear_data", "پاک کردن کامل داده‌ها"),
         BotCommand("settings", "تنظیمات ربات"),
         BotCommand("about", "اطلاعات ربات"),
         BotCommand("help", "نمایش پیام راهنما")
@@ -135,6 +144,33 @@ def new_chat(message):
     
     # Add a welcome message to the new session history
     save_message_to_history(chat_id_str, "system", NEW_CHAT_WELCOME_MESSAGE, session_id=new_session_id)
+
+def clear_data_command(message):
+    """
+    /clear_data Command: Ask for confirmation to wipe all stored data for the chat.
+    """
+    chat_id = str(message.chat.id)
+    logger.info("Processing /clear_data command for chat '%s'.", chat_id)
+
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        telebot.types.InlineKeyboardButton("✅ بله، پاک کن", callback_data="confirm_clear_data"),
+        telebot.types.InlineKeyboardButton("❌ انصراف", callback_data="cancel_clear_data")
+    )
+
+    warning_text = (
+        "⚠️ با اجرای این دستور تمام اطلاعات ذخیره‌شده شامل گزارش‌ها، تنظیمات، تاریخچه چت و تسک‌ها"
+        " برای همیشه حذف می‌شود و گفتگو از ابتدا شروع خواهد شد."
+        "\n\nآیا از انجام این کار مطمئن هستید؟"
+    )
+
+    bot.reply_to(
+        message,
+        escape_markdown_v2(warning_text),
+        reply_markup=keyboard,
+        parse_mode="MarkdownV2"
+    )
+    save_message_to_history(chat_id, "system", "درخواست تایید برای حذف کامل داده‌ها ارسال شد.")
 
 def send_welcome(message):
     """
@@ -187,8 +223,11 @@ def options_handler(message):
     btn_leaderboard = telebot.types.InlineKeyboardButton("🏆 رتبه‌بندی", callback_data="leaderboard")
     btn_generate_image = telebot.types.InlineKeyboardButton("🎨 ساخت تصویر", callback_data="generate_image")
     
+    btn_session_assistant = telebot.types.InlineKeyboardButton("🎙️ دستیار جلسات", callback_data="session_assistant")
+    
     keyboard.row(btn_coaching_ai, btn_insta_idea)
     keyboard.row(btn_leaderboard, btn_generate_image)
+    keyboard.row(btn_session_assistant)
     
     logger.info("Processing /options command for chat '%s'.", chat_id)
     bot.reply_to(message, escape_markdown_v2(OPTIONS_MENU_PROMPT), reply_markup=keyboard, parse_mode="MarkdownV2")
@@ -305,8 +344,27 @@ def send_menu(message):
     bot.send_message(message.chat.id, "منوی اصلی:", reply_markup=main_menu)
     save_message_to_history(chat_id, "system", "منوی اصلی نمایش داده شد.")
 
+def session_assistant_command(message):
+    """
+    /session_assistant Command: Start session analysis.
+    """
+    chat_id = str(message.chat.id)
+    logger.info("Processing /session_assistant command for chat '%s'.", chat_id)
+    
+    from callback_handlers import session_analysis_pending
+    session_analysis_pending[chat_id] = True
+    
+    prompt_text = "🎙️ *دستیار تحلیل جلسات*\n\nلطفاً یکی از موارد زیر را ارسال کنید:\n\n🎤 *ضبط صوتی جلسه*: یک ویس ضبط کنید\n📝 *متن جلسه*: متن جلسه را تایپ کنید\n\nمن جلسه را تحلیل کرده و خلاصهای جامع از آن ارائه خواهم داد."
+    
+    bot.reply_to(message, escape_markdown_v2(prompt_text), parse_mode="MarkdownV2")
+    save_message_to_history(chat_id, "system", "درخواست تحلیل جلسه")
+
 def handle_sprint_analysis(message):
     """Handle sprint analysis request"""
+    if not JIRA_ENABLED:
+        bot.reply_to(message, escape_markdown_v2("❌ قابلیت تحلیل اسپرینت در حال حاضر غیرفعال است."), parse_mode="MarkdownV2")
+        return
+
     try:
         from jira_integration import get_sprint_context_for_llm, invalidate_sprint_cache
         from prompts.prompts import SPRINT_ANALYSIS_PROMPT

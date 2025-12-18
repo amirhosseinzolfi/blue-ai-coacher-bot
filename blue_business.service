@@ -1,14 +1,19 @@
 [Unit]
 Description=Blue AI Business Coacher Bot
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/root/blue-ai-coacher-bot
-ExecStart=/root/blue-ai-coacher-bot/.venv/bin/python /root/blue-ai-coacher-bot/bot.py
+Environment="PATH=/root/blue-ai-coacher-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/root/blue-ai-coacher-bot/.env
+ExecStart=/root/blue-ai-coacher-bot/venv/bin/python bot.py
 Restart=always
 RestartSec=10
+StandardOutput=append:/var/log/blue_business_bot.log
+StandardError=append:/var/log/blue_business_bot_error.log
 
 [Install]
 WantedBy=multi-user.target

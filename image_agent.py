@@ -2,7 +2,7 @@ import logging
 import re
 from g4f.client import Client
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.tools import Tool
+from langchain_core.tools import Tool
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 

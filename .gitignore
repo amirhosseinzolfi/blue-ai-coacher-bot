@@ -17,10 +17,33 @@ checkpoints.sqlite*
 
 # Python cache
 __pycache__/
+
+# Environment and secrets
+.env
+.env.*
+mcp-atlassian.env*
+
+# Python virtual environments
+.venv/
+venv/
+*.so
+.Python
+
+# Database files
+*.sqlite*
+*.db*
+database/
+chroma_db/
+checkpoints.sqlite*
+*.db-journal
+
+# Python cache and build
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+build/
 build/
 develop-eggs/
 dist/
@@ -35,14 +58,57 @@ var/
 wheels/
 *.egg-info/
 .installed.cfg
+
+# IDE/editor files
+.vscode/
 *.egg
 
 # Configuration with sensitive data
 config.py
 mcp-atlassian.env.local
+.history/
+
+# Logs
+*.log*
+logs/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 
 # IDE files
+
+# Temporary files
+*.tmp
+*.temp
 .vscode/
+*.bak
+
+# Task/user data
+database/users_task.json
+
+# HAR and cookie files with sensitive data
+har_and_cookies/
+*.har
+*_cookies.json
+
+# Service files
+*.service
+blue_business_bot
+
+# Binary packages
+*.deb
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Misc
+*.pyc
 .idea/
 *.swp
 *.swo

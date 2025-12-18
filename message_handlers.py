@@ -62,6 +62,13 @@ def handle_message(message):
     chat_type = message.chat.type
     chat_id = str(message.chat.id)
     sender_first_name = message.from_user.first_name or message.from_user.username
+    
+    # Check if waiting for session analysis
+    from callback_handlers import session_analysis_pending
+    if session_analysis_pending.get(chat_id):
+        session_analysis_pending.pop(chat_id, None)
+        process_session_analysis(message)
+        return
 
     # Check if user is requesting the menu
     if message.content_type == 'text' and any(keyword in message.text.lower() for keyword in 
@@ -910,3 +917,75 @@ def process_image_generation(message):
             parse_mode="MarkdownV2"
         )
         save_message_to_history(chat_id, "assistant", f"خطا در ایجاد تصویر: نتوانستم تصویر درخواستی شما را بسازم.")
+
+
+def process_session_analysis(message):
+    """Process session analysis from voice or text input."""
+    chat_id = str(message.chat.id)
+    sender_first_name = message.from_user.first_name or message.from_user.username
+    
+    logger.info(f"Processing session analysis for chat {chat_id}")
+    
+    # Show appropriate waiting message
+    if message.content_type in ['voice', 'audio']:
+        waiting_text = "🎤 در حال تحلیل ضبط صوتی جلسه... لطفاً صبر کنید."
+    else:
+        waiting_text = "📝 در حال تحلیل متن جلسه... لطفاً صبر کنید."
+    
+    placeholder_msg = bot.reply_to(message, escape_markdown_v2(waiting_text), parse_mode="MarkdownV2")
+    
+    try:
+        from ai_utils import analyze_session
+        import base64
+        
+        bot.send_chat_action(chat_id, 'typing')
+        
+        if message.content_type in ['voice', 'audio']:
+            audio_obj = message.voice if message.content_type == 'voice' else message.audio
+            file_info = bot.get_file(audio_obj.file_id)
+            file_bytes = bot.download_file(file_info.file_path)
+            audio_b64 = base64.b64encode(file_bytes).decode('utf-8')
+            
+            input_data = {
+                'type': 'audio',
+                'data': audio_b64,
+                'mime_type': 'audio/ogg' if message.content_type == 'voice' else 'audio/mpeg'
+            }
+            save_message_to_history(chat_id, "user", f"{sender_first_name}: [ضبط صوتی جلسه]")
+        else:
+            input_data = message.text.strip()
+            save_message_to_history(chat_id, "user", f"{sender_first_name}: {input_data}")
+        
+        result = analyze_session(input_data)
+        
+        # Convert markdown to HTML for better Telegram formatting
+        import re
+        html_result = result
+        # Bold: **text** or __text__ -> <b>text</b>
+        html_result = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', html_result)
+        html_result = re.sub(r'__(.+?)__', r'<b>\1</b>', html_result)
+        # Italic: *text* or _text_ -> <i>text</i>
+        html_result = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', html_result)
+        # Code: `text` -> <code>text</code>
+        html_result = re.sub(r'`(.+?)`', r'<code>\1</code>', html_result)
+        # Headers: ## text -> <b>text</b>
+        html_result = re.sub(r'^#{1,6}\s+(.+)$', r'<b>\1</b>', html_result, flags=re.MULTILINE)
+        # Bullet points: - text or * text -> • text
+        html_result = re.sub(r'^[\-\*]\s+', '• ', html_result, flags=re.MULTILINE)
+        
+        bot.edit_message_text(
+            html_result,
+            chat_id=chat_id,
+            message_id=placeholder_msg.message_id,
+            parse_mode="HTML"
+        )
+        save_message_to_history(chat_id, "assistant", result)
+        
+    except Exception as e:
+        logger.error(f"Error in session analysis: {e}", exc_info=True)
+        error_msg = f"❌ خطا در تحلیل جلسه: {str(e)}"
+        bot.edit_message_text(
+            error_msg,
+            chat_id=chat_id,
+            message_id=placeholder_msg.message_id
+        )

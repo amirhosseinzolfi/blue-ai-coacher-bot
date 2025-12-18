@@ -1,4 +1,11 @@
+
 # Blue AI Coacher Bot (بلو)
+
+![GitHub last commit](https://img.shields.io/github/last-commit/amirhosseinzolfi/blue-ai-coacher-bot)
+![GitHub issues](https://img.shields.io/github/issues/amirhosseinzolfi/blue-ai-coacher-bot)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/amirhosseinzolfi/blue-ai-coacher-bot)
+![MIT License](https://img.shields.io/github/license/amirhosseinzolfi/blue-ai-coacher-bot)
+
 
 **Blue (بلو)** is a personalized Telegram group business coaching bot designed to assist business teams and members by leveraging business and team member data. It aims to provide professional, friendly, and engaging coaching through AI.
 
@@ -50,9 +57,10 @@
     *   Access to a Telegram Bot Token.
     *   API keys for OpenAI/Google AI Studio if using proprietary models directly (though G4F is also used).
 
+
 2.  **Clone the Repository:**
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/amirhosseinzolfi/blue-ai-coacher-bot.git
     cd blue-ai-coacher-bot
     ```
 
@@ -62,10 +70,14 @@
     source venv/bin/activate  # On Windows: venv\Scripts\activate
     ```
 
+
 4.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
+    # For Jira integration (optional):
+    pip install -r requirements_jira.txt
     ```
+
 
 5.  **Configuration:**
     *   Copy `config.py.example` to `config.py`:
@@ -82,15 +94,32 @@
     *   For Jira integration:
         *   Ensure Jira MCP server is running on the configured URL
         *   Duplicate `mcp-atlassian.env` to `mcp-atlassian.env.local`, populate Jira MCP credentials, and keep the `.local` file private.
+    *   **Environment Variables:**
+        *   Copy `.env.example` to `.env` and fill in all required secrets (never commit `.env` to git).
 
 6.  **Initialize Database:**
     The bot uses SQLite and will create database files automatically on first run.
+
 
 7.  **Run the Bot:**
     ```bash
     python bot.py
     ```
     This will also attempt to start the G4F API server locally.
+
+## 🚀 Quickstart
+
+```bash
+git clone https://github.com/amirhosseinzolfi/blue-ai-coacher-bot.git
+cd blue-ai-coacher-bot
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp config.py.example config.py
+# Edit config.py and .env as needed
+python bot.py
+```
+
 
 ## 📂 Project Structure
 
@@ -119,6 +148,7 @@
 └── README.md                  # This file
 ```
 
+
 ## 🤖 Usage
 
 Interact with Blue (بلو) in a Telegram group or direct chat:
@@ -145,12 +175,14 @@ When Jira integration is enabled, you can ask questions like:
 
 The bot automatically detects Jira-related queries and uses MCP tools to fetch real-time data.
 
+
 ## 🔒 Security Notes
 
 *   Never commit your `config.py` file with real API keys to version control.
 *   Use environment variables in production environments.
 *   The `.gitignore` file is configured to exclude sensitive files.
 *   Keep `mcp-atlassian.env.local` private and never commit it.
+
 
 ## 🤝 Contributing
 
@@ -163,6 +195,7 @@ Contributions are welcome! Please follow these steps:
 6. Open a Pull Request.
 
 Please ensure your code adheres to the project's coding style and includes relevant tests if applicable.
+
 
 ## 📄 License
 

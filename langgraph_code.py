@@ -22,7 +22,6 @@ import json
 import re
 import threading
 from typing import List, Dict, Any, Optional, Union
-from langchain_google_genai import ChatGoogleGenerativeAI
 ############################################
 # Third-Party Imports
 ############################################
@@ -33,9 +32,6 @@ import requests
 ############################################
 from config import (
     TELEGRAM_BOT_TOKEN,
-    GOOGLE_API_KEY,
-    GOOGLE_API_KEY_2,
-    OPENAI_API_KEY,
     ai_tone_map,
     DATABASE_NAME
 )
@@ -44,66 +40,24 @@ from utils.rich_logger import (
     setup_logger, display_content, log_function, log_telegram_message,
     log_api_interaction, log_summarization, log_ai_interaction,
     log_user_business_data, log_llm_request, log_agent_execution,
-    log_comprehensive_interaction, log_langgraph_execution  # add this import
+    log_comprehensive_interaction, log_langgraph_execution
 )
+
+# Import LLM instances from centralized module
+from llm_initial import (
+    llm,
+    llm_business,
+    user_llm,
+    llm_summary,
+    image_analyze_llm,
+    PRIMARY_LLM_MODEL
+)
+
 logger = setup_logger(level=logging.INFO)
 logger.info("Initializing LangChain integrations...")
 
-############################################
-# LLM Model Definitions and Instance Setup
-############################################
-PRIMARY_LLM_MODEL = "gemini-2.5-flash"
-BUSINESS_LLM_MODEL = "gemini-2.5-flash"
-SUMMARY_LLM_MODEL = "gemini-2.5-flash"
-USER_REPORT_LLM_MODEL = "gemini-2.5-flash"
-
-
-from langchain_openai import ChatOpenAI
-
-
-llm = ChatGoogleGenerativeAI(
-    model=PRIMARY_LLM_MODEL,
-    temperature=0.5,
-    api_key=GOOGLE_API_KEY
-)
-logger.info(f"Primary LangChain LLM initialized with model: {PRIMARY_LLM_MODEL}.")
-
-llm_business = ChatGoogleGenerativeAI(
-    model=BUSINESS_LLM_MODEL,
-    temperature=0.5,
-    api_key=GOOGLE_API_KEY
-)
-logger.info(f"Secondary LangChain LLM for business info summarization initialized with model: {BUSINESS_LLM_MODEL}.")
-
-user_llm = ChatGoogleGenerativeAI(
-    model=USER_REPORT_LLM_MODEL,
-    temperature=0.5,
-    api_key=GOOGLE_API_KEY
-)
-logger.info(f"User LLM initialized with model: {USER_REPORT_LLM_MODEL}.")
-
-llm_summary = ChatGoogleGenerativeAI(
-    model=SUMMARY_LLM_MODEL,
-    temperature=0.5,
-    api_key=GOOGLE_API_KEY_2
-)
-logger.info(f"Summary LLM initialized with model: {SUMMARY_LLM_MODEL}.")
-
-# Add image analysis LLM - this is now also defined in graph_definition.py to avoid circular imports
-image_analyze_llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    temperature=0.5,
-    api_key=GOOGLE_API_KEY
-)
-logger.info(f"Image analysis LLM initialized with model: gpt-4o.")
-
 # Global dictionary for user reports
 daily_users_report = {}
-
-atexit.register(lambda: llm.client.close() if hasattr(llm, "client") and callable(getattr(llm, "close", None)) else None)
-atexit.register(lambda: llm_business.client.close() if hasattr(llm_business, "client") and callable(getattr(llm_business.client, "close", None)) else None)
-atexit.register(lambda: user_llm.client.close() if hasattr(user_llm, "client") and callable(getattr(user_llm.client, "close", None)) else None)
-atexit.register(lambda: llm_summary.client.close() if hasattr(llm_summary, "client") and callable(getattr(llm_summary.client, "close", None)) else None)
 
 ############################################
 # Import Prompt Templates and Helper Texts
@@ -133,7 +87,7 @@ help_text_prompt = HELP_TEXT
 ############################################
 # LangChain Prompt Template
 ############################################
-from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, MessagesPlaceholder
 prompt = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(prompt_template_text),
     MessagesPlaceholder(variable_name="history"),

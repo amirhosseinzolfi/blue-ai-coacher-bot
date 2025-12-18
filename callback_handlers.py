@@ -13,9 +13,12 @@ from config import (
     business_info_update_pending,
     TELEGRAM_BOT_TOKEN
 )
-from db_manager import save_ai_tone, get_ai_tone, save_message_to_history
+
+# Track users waiting for session analysis input
+session_analysis_pending = {}
+from db_manager import save_ai_tone, get_ai_tone, save_message_to_history, clear_all_chat_data
 # Added imports for new handlers
-from langgraph_code import run_agent 
+from langgraph_code import run_agent, new_chat_session 
 from prompts.prompts import (
     TODAY_COACHING_TIP_PROMPT,
     INSTA_IDEA_PROMPT,
@@ -43,6 +46,9 @@ def setup_callback_handlers(bot_instance, logger_instance):
         'coaching_with_ai': handle_coaching_with_ai,
         'instagram_story_idea': handle_instagram_story_idea,
         'leaderboard': handle_leaderboard,
+        'confirm_clear_data': handle_confirm_clear_data,
+        'cancel_clear_data': handle_cancel_clear_data,
+        'session_assistant': handle_session_assistant,
     }
 
 def handle_set_business_info(call):
@@ -228,3 +234,80 @@ def handle_leaderboard(call):
     """Handles the 'Leaderboard' button click."""
     logger.info(f"Processing 'leaderboard' callback for chat {call.message.chat.id}")
     _process_action_callback(call, LEADER_BOARD_PROMPT, "رتبه‌بندی", is_leaderboard=True)
+
+def handle_confirm_clear_data(call):
+    """Permanently delete all stored data for the chat after user confirmation."""
+    chat_id = str(call.message.chat.id)
+    chat_type = call.message.chat.type
+    bot.answer_callback_query(call.id)
+
+    try:
+        clear_all_chat_data(chat_id, chat_type)
+        business_info_update_pending.pop(chat_id, None)
+        new_session_id = new_chat_session(chat_id)
+
+        confirmation_text = (
+            "✅ تمام داده‌های ذخیره‌شده حذف شد و جلسه‌ای تازه آغاز گردید."
+            "\nبرای شروع گفتگو کافیست پیام جدیدی ارسال کنید."
+        )
+
+        bot.edit_message_text(
+            escape_markdown_v2(confirmation_text),
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            parse_mode="MarkdownV2"
+        )
+        save_message_to_history(chat_id, "system", "تمام داده‌ها حذف شد و جلسه جدیدی شروع شد.", session_id=new_session_id)
+    except Exception as e:
+        logger.error(f"Error clearing data for chat {chat_id}: {e}", exc_info=True)
+        error_text = "❌ خطا در حذف داده‌ها. لطفاً بعداً دوباره تلاش کنید."
+        try:
+            bot.edit_message_text(
+                escape_markdown_v2(error_text),
+                chat_id=chat_id,
+                message_id=call.message.message_id,
+                parse_mode="MarkdownV2"
+            )
+        except Exception:
+            bot.send_message(chat_id, escape_markdown_v2(error_text), parse_mode="MarkdownV2")
+        save_message_to_history(chat_id, "system", "خطا در حذف داده‌ها رخ داد.")
+
+def handle_cancel_clear_data(call):
+    """Cancel the clear-data request and keep the existing conversation."""
+    chat_id = str(call.message.chat.id)
+    bot.answer_callback_query(call.id)
+
+    cancel_text = "عملیات حذف داده‌ها لغو شد و اطلاعات فعلی حفظ گردید."
+    try:
+        bot.edit_message_text(
+            escape_markdown_v2(cancel_text),
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            parse_mode="MarkdownV2"
+        )
+    except Exception:
+        bot.send_message(chat_id, escape_markdown_v2(cancel_text), parse_mode="MarkdownV2")
+
+    save_message_to_history(chat_id, "system", "کاربر عملیات حذف داده‌ها را لغو کرد.")
+
+
+def handle_session_assistant(call):
+    """Handle session assistant button - ask user to record or send session."""
+    chat_id = str(call.message.chat.id)
+    bot.answer_callback_query(call.id)
+    
+    session_analysis_pending[chat_id] = True
+    
+    prompt_text = "🎙️ *دستیار تحلیل جلسات*\n\nلطفاً یکی از موارد زیر را ارسال کنید:\n\n🎤 *ضبط صوتی جلسه*: یک ویس ضبط کنید\n📝 *متن جلسه*: متن جلسه را تایپ کنید\n\nمن جلسه را تحلیل کرده و خلاصهای جامع از آن ارائه خواهم داد."
+    
+    try:
+        bot.edit_message_text(
+            escape_markdown_v2(prompt_text),
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            parse_mode="MarkdownV2"
+        )
+    except Exception:
+        bot.send_message(chat_id, escape_markdown_v2(prompt_text), parse_mode="MarkdownV2")
+    
+    save_message_to_history(chat_id, "system", "درخواست تحلیل جلسه")

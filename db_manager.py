@@ -206,6 +206,22 @@ class DatabaseManager:
             else:
                 logging.warning(f"Clearing ALL chat history for chat_id={chat_id} (no session_id specified)")
                 self.conn.execute("DELETE FROM chat_history WHERE chat_id=?", (chat_id,))
+
+    def clear_all_chat_data(self, chat_id: str, chat_type: str = "private") -> None:
+        """Remove all persisted data for a chat across every table."""
+        safe_chat_id = str(chat_id)
+        with self._lock, self.conn:
+            logging.info(f"Clearing ALL stored data for chat_id={safe_chat_id}, chat_type={chat_type}")
+            self.conn.execute("DELETE FROM chat_history WHERE chat_id=?", (safe_chat_id,))
+            self.conn.execute(
+                "DELETE FROM business_info WHERE chat_id=? AND chat_type=?",
+                (safe_chat_id, chat_type)
+            )
+            self.conn.execute(
+                "DELETE FROM settings WHERE chat_id=? AND chat_type=?",
+                (safe_chat_id, chat_type)
+            )
+            self.conn.execute("DELETE FROM user_tasks WHERE chat_id=?", (safe_chat_id,))
     
     def save_task(self, chat_id: str, user_name: str, entry: str, task_date: str = None, timestamp: str = None) -> bool:
         """Save a user task to the database"""
@@ -319,6 +335,9 @@ def get_user_info(chat_id: str, date: Optional[str] = None, chat_type: str = "pr
             return ""
     return ""
 
+def clear_all_chat_data(chat_id: str, chat_type: str = "private") -> None:
+    _db_manager.clear_all_chat_data(chat_id, chat_type)
+
 # Module‐level wrapper to ensure a session exists and save messages
 def save_message_to_history(chat_id: str, role: str, content: str, session_id: Optional[str] = None) -> None:
     try:
@@ -429,6 +448,7 @@ __all__ = [
     'get_business_info',
     'save_user_info',
     'get_user_info',
+    'clear_all_chat_data',
     'save_message_to_history',
     'get_chat_history',
     'get_chat_messages',

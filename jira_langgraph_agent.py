@@ -19,19 +19,17 @@ from rich.text import Text
 from rich import box
 
 # LangChain / LangGraph
-from langgraph.prebuilt import create_react_agent  # ReAct agent (LangGraph)
-from langchain_google_genai import ChatGoogleGenerativeAI  # Gemini chat model
-from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP -> LC tools
-from langchain_core.messages import BaseMessage, HumanMessage  # message types
+from langgraph.prebuilt import create_react_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_core.messages import BaseMessage, HumanMessage
+
+# Import LLM creation from centralized module
+from llm_initial import create_jira_agent_llm, JIRA_AGENT_LLM_MODEL
 
 # ---------- Config ----------
 JIRA_MCP_URL = os.getenv("JIRA_MCP_URL", "http://localhost:9003/mcp")
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL", JIRA_AGENT_LLM_MODEL)
 TEMPERATURE = float(os.getenv("MODEL_TEMPERATURE", "0.5"))
-
-# You asked to hardcode this API key; you may override with the env var GOOGLE_API_KEY
-_GEMINI_KEY_FROM_USER = "AIzaSyCvzuIRTP3zRoaM0Nt7GrX8y6B16l8geXA"
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", _GEMINI_KEY_FROM_USER)
 
 AGENT_SYSTEM_PROMPT = """You are Blue AI Coacher, a helpful Jira assistant.
 When the user asks anything about Jira (issues, sprints, boards, epics, versions),
@@ -97,11 +95,9 @@ def pretty_messages_table(messages: List[Any]) -> Table:
     return t
 
 # ---------- Build pieces ----------
-def build_llm() -> ChatGoogleGenerativeAI:
-    if not GOOGLE_API_KEY:
-        console.print("[red]Missing Google API key.[/red] Set GOOGLE_API_KEY or edit the script.")
-        sys.exit(1)
-    return ChatGoogleGenerativeAI(model=MODEL_NAME, temperature=TEMPERATURE, api_key=GOOGLE_API_KEY)
+def build_llm():
+    """Build LLM instance using centralized configuration."""
+    return create_jira_agent_llm(model=MODEL_NAME, temperature=TEMPERATURE)
 
 async def load_mcp_tools():
     client = MultiServerMCPClient({

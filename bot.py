@@ -191,6 +191,14 @@ def new_chat_command(message):
 def generate_image_command(message):
     command_handlers['generate_image'](message)
 
+@bot.message_handler(commands=['clear_data'])
+def clear_data_command(message):
+    command_handlers['clear_data'](message)
+
+@bot.message_handler(commands=['session_assistant'])
+def session_assistant_command(message):
+    command_handlers['session_assistant'](message)
+
 ############################################
 # Register Callback Query Handlers
 ############################################
@@ -223,12 +231,23 @@ def instagram_story_idea_callback(call):
 def leaderboard_callback(call):
     callback_handlers['leaderboard'](call)
 
+@bot.callback_query_handler(func=lambda call: call.data == "confirm_clear_data")
+def confirm_clear_data_callback(call):
+    callback_handlers['confirm_clear_data'](call)
+
+@bot.callback_query_handler(func=lambda call: call.data == "cancel_clear_data")
+def cancel_clear_data_callback(call):
+    callback_handlers['cancel_clear_data'](call)
+
+@bot.callback_query_handler(func=lambda call: call.data == "session_assistant")
+def session_assistant_callback(call):
+    callback_handlers['session_assistant'](call)
+
 ############################################
 # Register Menu Button Handler
 ############################################
 @bot.message_handler(func=lambda m: m.text in [
-    "➕ افزودن تسک", "📊 گزارش امروز", "💡 کوچینگ با هوش مصنوعی",  # Added coaching button
-    "🎨 ساخت تصویر", "⚙️ گزینه‌های بیشتر"
+    "➕ افزودن تسک", "📊 گزارش امروز", "💡 کوچینگ با هوش مصنوعی", "⚙️ گزینه‌های بیشتر"
 ])
 def main_menu_handler(message):
     """Handle main menu button clicks"""
@@ -258,7 +277,7 @@ def main_menu_handler(message):
 ############################################
 # Register Message Handlers
 ############################################
-@bot.message_handler(content_types=['text', 'photo'])
+@bot.message_handler(content_types=['text', 'photo', 'voice', 'audio'])
 @log_function(logger)
 def handle_message_wrapper(message):
     message_handlers['text_photo'](message)
